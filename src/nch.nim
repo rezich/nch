@@ -117,14 +117,22 @@ proc attach*[T: Comp](parent: ref Node): T {.discardable.} =
   #parent.relatives[">" & result.name] = cast[ref Node](result)
   parent.relatives[">" & result.name] = box(result)
 
-proc getComp[T: Comp](node: Node): ref T =
+proc getComp[T: Comp](node: ref Node): ref T =
   if typedesc[T].name notin node.univ.compAllocs:
     echo "EXCEPTION: Comp not registered w/ Univ"
     return nil
-  if ">" & typedesc[T].name notin node.relatives:
+  let name = ">" & typedesc[T].name
+  if name notin node.relatives:
     echo "EXCEPTION: Comp not found in Node"
     return nil
-  return nil
+  return cast[ref T](node.relatives[name])
+
+proc getElem(node: Elem, search: string): Elem =
+  let name = search
+  if name notin node.relatives:
+    echo "EXCEPTION: relative Elem not found"
+    return nil
+  return cast[Elem](node.relatives[name])
 
 import nchpkg/sys.nim
 export sys
@@ -162,9 +170,11 @@ when isMainModule:
   register[Renderer](app, newRenderer)
   register[TimestepMgr](app, newTimestepMgr)
 
+  attach[TimestepMgr](app)
   attach[Renderer](app)
   attach[InputMgr[Input]](app)
   attach[TestComp](world)
+  
 
   assert(world.relatives[">TestComp"] != nil)
   assert(app.relatives[">InputMgr[nch.Input]"] != nil)
@@ -173,12 +183,13 @@ when isMainModule:
 
   cast[ref Renderer](app.relatives[">Renderer"]).initialize()
 
-  var name = typedesc[TestComp].name
-  var comps = addr cast[CompAlloc[TestComp]](app.compAllocs[name]).comps
-  assert(comps.len == 1)
-  assert(comps[0].things == 42)
+  assert(getComp[TestComp](world) != nil)
+  assert(getComp[TimestepMgr](app) != nil)
 
-  #echo cast[CompAlloc[TestComp]](app.univ().compAllocs["TestComp"]).comps.len
+  assert(app.getElem("world") != nil)
+
+
+  cast[ref Renderer](app.relatives[">Renderer"]).shutdown()
 
   app.destroy()
   
