@@ -70,17 +70,19 @@ proc initUniv*(univ: var Univ, name: string) =
   if nch.root == nil:
     nch.root = addr univ
 
-proc destroy[T: Univ](node: var T) =
+proc destroy*[T: Univ](node: var T) =
+  node.internalDestroying = true
+  #[
   if nch.root == addr node:
     nch.root = nil
     node = nil # ???
+  ]#
   
 proc add*[T: Elem](parent: var T, name: string): Elem {.discardable.} =
   new(result)
   result.name = name
   initElem(result, cast[Elem](parent))
   parent.relatives[name] = result
-  
 
 proc initComp*[T: Comp](comp: var T, owner: Elem) =
   comp.name = typedesc[T].name
@@ -114,10 +116,10 @@ proc allocComp[T: Comp](univ: var Univ): T =
 
 proc attach*[T: Comp](parent: ref Node): T {.discardable.} =
   result = allocComp[T](parent.univ)
-  #parent.relatives[">" & result.name] = cast[ref Node](result)
+  result.relatives["<"] = parent
   parent.relatives[">" & result.name] = box(result)
 
-proc getComp[T: Comp](node: ref Node): ref T =
+proc getComp*[T: Comp](node: ref Node): ref T =
   if typedesc[T].name notin node.univ.compAllocs:
     echo "EXCEPTION: Comp not registered w/ Univ"
     return nil
@@ -127,7 +129,7 @@ proc getComp[T: Comp](node: ref Node): ref T =
     return nil
   return cast[ref T](node.relatives[name])
 
-proc getElem(node: Elem, search: string): Elem =
+proc getElem*(node: Elem, search: string): Elem =
   let name = search
   if name notin node.relatives:
     echo "EXCEPTION: relative Elem not found"
@@ -151,12 +153,17 @@ proc newTestComp(owner: Elem): TestComp =
   result = TestComp(things: 42)
   result.initComp(owner)
   
-
+proc toInput*(key: Scancode): Input =
+  case key
+  of SDL_SCANCODE_LEFT: Input.left
+  of SDL_SCANCODE_RIGHT: Input.right
+  of SDL_SCANCODE_ESCAPE: Input.quit
+  else: Input.none
 
 ### TESTS ###
 
 when isMainModule:
-  var app : Univ
+  var app: Univ
   initUniv(app, "nch test app")
 
   var world = app.add("world")
@@ -179,18 +186,27 @@ when isMainModule:
   assert(world.relatives[">TestComp"] != nil)
   assert(app.relatives[">InputMgr[nch.Input]"] != nil)
 
-  assert(cast[ref InputMgr[Input]](app.relatives[">InputMgr[nch.Input]"]).getInput(Input.action) == InputState.up)
-
-  cast[ref Renderer](app.relatives[">Renderer"]).initialize()
+  assert(getComp[InputMgr[Input]](app).getInput(Input.action) == InputState.up)
 
   assert(getComp[TestComp](world) != nil)
   assert(getComp[TimestepMgr](app) != nil)
 
   assert(app.getElem("world") != nil)
 
+  getComp[InputMgr[Input]](app).setHandler(toInput)
 
-  cast[ref Renderer](app.relatives[">Renderer"]).shutdown()
+  getComp[InputMgr[Input]](app).tick()
 
-  app.destroy()
+  # fake game loop time
+  getComp[Renderer](app).initialize()
+
+  getComp[TimestepMgr](app).initialize()
+
+  getComp[Renderer](app).shutdown()
   
   assert(app == nil)
+
+
+
+proc asdf[T: proc]() =
+  discard
