@@ -21,6 +21,7 @@ type
     name*: string
     internalUniv*: ref Univ
     relatives: OrderedTableRef[string, ref Node]
+    internalDestroying: bool
   
   CompAllocBase = ref object of RootObj
 
@@ -39,6 +40,9 @@ type
     root*: ptr Univ
 
 var nch* = Nch(root: nil)
+
+proc destroying*(node: ref Node): bool =
+  node.internalDestroying
     
 proc univ*(node: Node): ref Univ =
   return node.internalUniv
@@ -51,6 +55,7 @@ proc univ*(node: ref Node): ref Univ =
 proc initElem[T: Elem](elem: var T, parent: Elem = nil) =
   if parent != nil:
     elem.internalUniv = parent.univ
+  elem.internalDestroying = false
   elem.relatives = newOrderedTable[string, ref Node]()
   elem.relatives[".."] = cast[ref Node](parent)
 
@@ -61,6 +66,7 @@ proc initUniv*(univ: var Univ, name: string) =
   )
   initElem(univ)
   univ.internalUniv = nil
+  univ.internalDestroying = false
   if nch.root == nil:
     nch.root = addr univ
 
@@ -80,6 +86,7 @@ proc initComp*[T: Comp](comp: var T, owner: Elem) =
   comp.name = typedesc[T].name
   comp.relatives = newOrderedTable[string, ref Node]()
   comp.internalUniv = owner.univ
+  comp.internalDestroying = false
 
 proc newCompAlloc[T: Comp](newProc: proc (owner: Elem): T) : CompAlloc[T] =
   result = CompAlloc[T](
