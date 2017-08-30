@@ -10,4 +10,5 @@ bin           = @["nch"]
 # Dependencies
 
 requires "nim >= 0.17.1"
+requires "sdl2"
 
