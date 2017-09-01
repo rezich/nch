@@ -17,7 +17,7 @@ import
 
 ### SYSTEM ###
 const
-  compsPerPage = 1024
+  compsPerPage = 2
 
 proc box*[T](x: T): ref T =
   new(result); result[] = x
@@ -114,12 +114,17 @@ proc initComp*[T: Comp](comp: var T, owner: Elem) =
   comp.internalUniv = owner.univ
   comp.internalDestroying = false
 
-proc newPage[T: Comp](prev: ptr Page[T] = nil): Page[T] =
+proc newPage[T: Comp](): Page[T] =
   result = Page[T](
     next: nil
   )
-  if prev != nil:
-    prev.next = addr(result)
+  for i in result.contents.mitems:
+    i.active = false
+
+proc newPage[T: Comp](prev: ptr Page[T]): ptr Page[T] {.discardable.} =
+  result = cast[ptr Page[T]](alloc(sizeof(Page[T])))
+  result.next = nil
+  prev.next = result
   for i in result.contents.mitems:
     i.active = false
 
@@ -148,9 +153,19 @@ proc allocComp[T: Comp](univ: Univ): (ptr T, int) =
   # TODO: use empty spaces if available
   let compAlloc = cast[CompAlloc[T]](univ.compAllocs[name])
   #if (compAlloc.last mod compsPerPage)
+  var curPage = addr compAlloc.comps
   var index = compAlloc.last
-  compAlloc.comps.contents[index] = compAlloc.newProc(univ)
-  result = (addr compAlloc.comps.contents[compAlloc.last], index)
+  echo "ind: " & $index
+  while index >= compsPerPage:
+    index = index - compsPerPage
+    if curPage.next == nil:
+      echo "  making new page"
+      newPage[T](curPage)
+    curPage = curPage.next
+  
+  echo "  ind: " & $index
+  curPage.contents[index] = compAlloc.newProc(univ)
+  result = (cast[ptr T](addr(curPage.contents[index])), index)
   inc compAlloc.last
 
 proc attach*[T: Comp](owner: Elem): ptr T {.discardable.} =
@@ -174,7 +189,12 @@ proc getComp*[T: Comp](owner: Elem): ptr T =
     echo "EXCEPTION: Comp " & name & " not found in Node"
     return nil
   var compAlloc = cast[CompAlloc[T]](owner.univ.compAllocs[name])
-  return cast[ptr T](addr(compAlloc.comps.contents[owner.comps[name].index])) #TODO: paging!
+  var curPage = addr compAlloc.comps
+  var index = owner.comps[name].index
+
+  while index >= compsPerPage:
+    curPage = curPage.next
+  return addr curPage.contents[index]
 
 proc getComp*[T: Comp](owner: Univ): ptr T =
   getComp[T](cast[Elem](owner))
@@ -251,6 +271,15 @@ when isMainModule:
   getComp[Renderer](app).initialize()
 
   attach[TestComp](world)
+
+  var p1 = world.add("player1")
+  attach[TestComp](p1)
+  var p2 = world.add("player2")
+  attach[TestComp](p2)
+  var p3 = world.add("player3")
+  attach[TestComp](p3)
+  var p4 = world.add("player4")
+  attach[TestComp](p4)
 
   for i in mitems[TestComp](app):
     echo i.things
