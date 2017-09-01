@@ -194,8 +194,8 @@ proc getComp*[T: Comp](owner: Elem): ptr T =
   var compAlloc = cast[CompAlloc[T]](owner.univ.compAllocs[name])
   var curPage = addr compAlloc.comps
   var index = owner.comps[name].index
-
   while index >= compsPerPage:
+    index = index - compsPerPage
     curPage = curPage.next
   addr curPage.contents[index]
 
@@ -225,7 +225,7 @@ proc finalDestroy[T: Elem](elem: var T) =
     var key: string
     var val: CompRef
     (key, val) = i
-    echo "adding vacancy: " & $val.index
+    
     elem.univ.compAllocs[key].vacancies.add(val.index)
   elem = nil
 
@@ -297,6 +297,7 @@ when isMainModule:
 
   var p1 = world.add("player1")
   attach[TestComp](p1)
+  getComp[TestComp](p1).things = 108
   var p2 = world.add("player2")
   attach[TestComp](p2)
   var p3 = world.add("player3")
@@ -307,6 +308,7 @@ when isMainModule:
 
   var p4 = world.add("player4")
   attach[TestComp](p4)
+  echo getComp[TestComp](p4).things
 
   var p5 = world.add("player5")
   attach[TestComp](p5)
