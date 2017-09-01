@@ -21,12 +21,13 @@ type
 type
   TimestepMgr* = object of Comp
     fpsman: FpsManager
+    onTick*: nch.Event[proc (univ: var Univ, dt: float)]
 
 proc newTimestepMgr*(owner: Elem): TimestepMgr =
-  result = TimestepMgr()
+  result = TimestepMgr(
+    onTick: newEvent[proc (univ: var Univ, dt: float)]()
+  )
   result.initComp(owner)
-
-
 
 
 
@@ -36,15 +37,11 @@ type
   InputMgr*[T: enum] = object of Comp
     input: array[T, bool]
     inputLast: array[T, bool]
-    handler: proc (key: Scancode): T
+    handler*: proc (key: Scancode): T
   
   InputState* {.pure.} = enum up, pressed, down, released
 
-proc newInputMgr*[T: enum](owner: Elem): InputMgr[T] =
-  result = InputMgr[T]()
-  result.initComp(owner)
-
-proc tick*[T: enum](mgr: ref InputMgr[T]) =
+proc tick*[T: enum](mgr: var InputMgr[T], dt: float) =
   shallowCopy(mgr.inputLast, mgr.input)
   var event = defaultEvent
   while pollEvent(event):
@@ -58,11 +55,24 @@ proc tick*[T: enum](mgr: ref InputMgr[T]) =
     else:
       discard
 
+proc inputMgr_tick*[T: enum](univ: var Univ, dt: float) =
+  for comp in cast[CompAlloc[InputMgr[T]]](univ.compAllocs[typedesc[InputMgr[T]].name]).comps.contents.mitems:
+    tick[T](comp, dt)
+
+proc newInputMgr*[T: enum](owner: Elem): InputMgr[T] =
+  result = InputMgr[T]()
+  result.initComp(owner)
+
+proc regInputMgr*[T: enum](univ: var Univ) =
+  subscribe(getComp[TimestepMgr](univ).onTick, inputMgr_tick[T])
+
 
 proc setHandler*[T: enum](mgr: var InputMgr[T], handler: proc (key: Scancode): T) =
+  #echo repr handler
   mgr.handler = handler
+  #echo repr mgr.handler
 
-proc getInput*[T: enum](mgr: InputMgr[T], input: T): InputState =
+proc getInput*[T: enum](mgr: var InputMgr[T], input: T): InputState =
   if not mgr.input[input] and not mgr.inputLast[input]: return InputState.up
   if mgr.input[input] and not mgr.inputLast[input]: return InputState.pressed
   if mgr.input[input] and mgr.inputLast[input]: return InputState.down
@@ -74,7 +84,7 @@ proc getInput*[T: enum](mgr: InputMgr[T], input: T): InputState =
 
 type
   Renderer* = object of Comp
-    ren: RendererPtr
+    ren*: RendererPtr
     win: WindowPtr
   
   SDLException = object of Exception
@@ -102,14 +112,33 @@ proc initialize*(renderer: var Renderer) =
     flags = Renderer_Accelerated or Renderer_PresentVsync)
   sdlFailIf renderer.ren.isNil: "Renderer could not be created"
 
+proc tick(renderer: var Renderer, dt: float) =
+  #echo repr renderer.ren
+  renderer.ren.setDrawColor(0, 255, 0, 255)
+  renderer.ren.clear()
+  renderer.ren.present()
+
+proc renderer_tick(univ: var Univ, dt: float) =
+  for comp in cast[CompAlloc[Renderer]](univ.compAllocs[typedesc[Renderer].name]).comps.contents.mitems:
+    #echo repr comp.ren
+    #comp.tick(dt)
+    comp.tick(dt)
+
 proc shutdown*(renderer: var Renderer) =
   renderer.win.destroy()
   renderer.ren.destroy()
   sdl2.quit()
 
+proc regRenderer*(univ: var Univ) =
+  discard#subscribe(getComp[TimestepMgr](univ).onTick, renderer_tick)
 
-proc initialize*(mgr: TimestepMgr) =
+
+
+proc initialize*(mgr: var TimestepMgr) =
+
+  echo "SHOULD NOT BE NIL:"
+  echo repr cast[CompAlloc[Renderer]](mgr.univ.compAllocs[typedesc[Renderer].name]).comps.contents[0].ren
+
   while not mgr.univ[].destroying:
-    getComp[Renderer](mgr.univ[]).ren.setDrawColor(0, 0, 0, 255)
-    getComp[Renderer](mgr.univ[]).ren.clear()
-    getComp[Renderer](mgr.univ[]).ren.present()
+    for e in mgr.onTick.subscriptions:
+      e(mgr.univ[], 0.0)
