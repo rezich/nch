@@ -36,12 +36,12 @@ type
     internalDestroying*: bool
   
   CompAllocBase* = ref object of RootObj
+    vacancies: seq[int]
 
   CompAlloc*[T] = ref object of CompAllocBase
     comps*: Page[T]
     newProc: proc (owner: Elem): T
     last: int
-    vacancies: array[0..compsPerPage, int]
   
   Comp* = object of Node
     active*: bool
@@ -132,7 +132,8 @@ proc newCompAlloc[T: Comp](newProc: proc (owner: Elem): T) : CompAlloc[T] =
   result = CompAlloc[T](
     comps: newPage[T](),
     last: 0,
-    newProc: newProc
+    newProc: newProc,
+    vacancies: newSeq[int]()
   )
 
 proc register*[T](univ: Univ, newProc: proc (owner: Elem): T, regProc: proc (univ: Univ) = nil) =
@@ -150,23 +151,25 @@ proc allocComp[T: Comp](univ: Univ): (ptr T, int) =
   if name notin univ.compAllocs:
     echo "EXCEPTION: Comp not registered w/ Univ"
     return
-  # TODO: use empty spaces if available
+  
   let compAlloc = cast[CompAlloc[T]](univ.compAllocs[name])
-  #if (compAlloc.last mod compsPerPage)
+  var index: int
+  if compAlloc.vacancies.len > 0:
+    index = compAlloc.vacancies.pop
+  else:
+    index = compAlloc.last
+    inc compAlloc.last
+  
+  let realIndex = index
   var curPage = addr compAlloc.comps
-  var index = compAlloc.last
-  echo "ind: " & $index
   while index >= compsPerPage:
     index = index - compsPerPage
     if curPage.next == nil:
-      echo "  making new page"
       newPage[T](curPage)
     curPage = curPage.next
-  
-  echo "  ind: " & $index
   curPage.contents[index] = compAlloc.newProc(univ)
-  result = (cast[ptr T](addr(curPage.contents[index])), index)
-  inc compAlloc.last
+  result = (cast[ptr T](addr(curPage.contents[index])), realIndex)
+  
 
 proc attach*[T: Comp](owner: Elem): ptr T {.discardable.} =
   var index : int
@@ -194,7 +197,7 @@ proc getComp*[T: Comp](owner: Elem): ptr T =
 
   while index >= compsPerPage:
     curPage = curPage.next
-  return addr curPage.contents[index]
+  addr curPage.contents[index]
 
 proc getComp*[T: Comp](owner: Univ): ptr T =
   getComp[T](cast[Elem](owner))
@@ -204,7 +207,7 @@ proc getElem*(node: Elem, search: string): Elem =
   if name notin node.elems:
     echo "EXCEPTION: relative Elem not found"
     return nil
-  return cast[Elem](node.elems[name])
+  cast[Elem](node.elems[name])
 
 proc destroy*[T: Univ](node: var T) =
   node.internalDestroying = true
@@ -213,6 +216,26 @@ proc destroy*[T: Univ](node: var T) =
     nch.root = nil
     node = nil # ???
   ]#
+
+proc destroy*[T: Elem](elem: T) =
+  elem.internalDestroying = true
+
+proc finalDestroy[T: Elem](elem: var T) =
+  for i in elem.comps.pairs:
+    var key: string
+    var val: CompRef
+    (key, val) = i
+    echo "adding vacancy: " & $val.index
+    elem.univ.compAllocs[key].vacancies.add(val.index)
+  elem = nil
+
+proc destroy*[T: Comp](comp: ptr T) =
+  comp.active = false
+  comp.internalDestroying = true
+
+proc finalDestroy[T: Comp](comp: var ptr T) =
+  #TODO: onDestroy?
+  discard
 
 # iterates through all active instances of a given Comp in a Univ
 iterator mitems*[T: Comp](univ: Univ): ptr T =
@@ -270,7 +293,7 @@ when isMainModule:
   attach[Renderer](app)
   getComp[Renderer](app).initialize()
 
-  attach[TestComp](world)
+  #attach[TestComp](world)
 
   var p1 = world.add("player1")
   attach[TestComp](p1)
@@ -278,14 +301,23 @@ when isMainModule:
   attach[TestComp](p2)
   var p3 = world.add("player3")
   attach[TestComp](p3)
+
+  destroy(p3)
+  finalDestroy(p3)
+
   var p4 = world.add("player4")
   attach[TestComp](p4)
 
-  for i in mitems[TestComp](app):
-    echo i.things
-    i.things = 88
+  var p5 = world.add("player5")
+  attach[TestComp](p5)
+
+  destroy(p1)
+  finalDestroy(p1)
   
-  for i in mitems[TestComp](app):
-    echo i.things
+  var p6 = world.add("player6")
+  attach[TestComp](p6)
+
+  var p7 = world.add("player7")
+  attach[TestComp](p7)
 
   getComp[TimestepMgr](app).initialize()
