@@ -4,35 +4,34 @@ import
   tables,
   typetraits,
   sequtils,
-  future
-
-import sdl2, sdl2/gfx, sdl2.image, sdl2.ttf, basic2d, random, math
-
-
-### Transform2D ###
-
-type
-  Transform2D* = object of RootObj
-
-
+  future,
+  sdl2,
+  sdl2/gfx,
+  sdl2/image,
+  sdl2/ttf,
+  basic2d,
+  random,
+  math
 
 ### TimestepMgr ###
-
 type
   TimestepMgr* = object of Comp
     fpsman: FpsManager
-    onTick*: nch.Event[proc (univ: var Univ, dt: float)]
+    onTick*: nch.Event[proc (univ: Univ, dt: float)]
 
 proc newTimestepMgr*(owner: Elem): TimestepMgr =
   result = TimestepMgr(
-    onTick: newEvent[proc (univ: var Univ, dt: float)]()
+    onTick: newEvent[proc (univ: Univ, dt: float)](),
   )
   result.initComp(owner)
 
+proc initialize*(mgr: var TimestepMgr) =
+  while not mgr.univ.internalDestroying:
+    for e in mgr.onTick.subscriptions:
+      e(mgr.internalUniv, 0.0)
 
 
 ### InputMgr ###
-
 type
   InputMgr*[T: enum] = object of Comp
     input: array[T, bool]
@@ -47,7 +46,8 @@ proc tick*[T: enum](mgr: var InputMgr[T], dt: float) =
   while pollEvent(event):
     case event.kind
     of QuitEvent:
-      mgr.univ[].destroy()
+      mgr.internalUniv.destroy()
+      discard
     of KeyDown:
       mgr.input[mgr.handler(event.key.keysym.scancode)] = true
     of KeyUp:
@@ -55,22 +55,21 @@ proc tick*[T: enum](mgr: var InputMgr[T], dt: float) =
     else:
       discard
 
-proc inputMgr_tick*[T: enum](univ: var Univ, dt: float) =
+proc inputMgr_tick*[T: enum](univ: Univ, dt: float) =
   for comp in cast[CompAlloc[InputMgr[T]]](univ.compAllocs[typedesc[InputMgr[T]].name]).comps.contents.mitems:
-    tick[T](comp, dt)
+    if comp.active:
+      tick[T](comp, dt)
 
 proc newInputMgr*[T: enum](owner: Elem): InputMgr[T] =
   result = InputMgr[T]()
   result.initComp(owner)
 
-proc regInputMgr*[T: enum](univ: var Univ) =
+proc regInputMgr*[T: enum](univ: Univ) =
   subscribe(getComp[TimestepMgr](univ).onTick, inputMgr_tick[T])
 
 
 proc setHandler*[T: enum](mgr: var InputMgr[T], handler: proc (key: Scancode): T) =
-  #echo repr handler
   mgr.handler = handler
-  #echo repr mgr.handler
 
 proc getInput*[T: enum](mgr: var InputMgr[T], input: T): InputState =
   if not mgr.input[input] and not mgr.inputLast[input]: return InputState.up
@@ -80,8 +79,8 @@ proc getInput*[T: enum](mgr: var InputMgr[T], input: T): InputState =
 
 
 
-### Renderer ###
 
+### Renderer ###
 type
   Renderer* = object of Comp
     ren*: RendererPtr
@@ -105,7 +104,7 @@ proc initialize*(renderer: var Renderer) =
 
   renderer.win = createWindow(title = renderer.internalUniv.name,
     x = SDL_WINDOWPOS_CENTERED, y = SDL_WINDOWPOS_CENTERED,
-    w = 160, h = 120, flags = SDL_WINDOW_SHOWN)
+    w = 640, h = 480, flags = SDL_WINDOW_SHOWN)
   sdlFailIf renderer.win.isNil: "Window could not be created"
 
   renderer.ren = renderer.win.createRenderer(index = -1,
@@ -114,31 +113,20 @@ proc initialize*(renderer: var Renderer) =
 
 proc tick(renderer: var Renderer, dt: float) =
   #echo repr renderer.ren
-  renderer.ren.setDrawColor(0, 255, 0, 255)
+  renderer.ren.setDrawColor(0, 64, 0, 255)
   renderer.ren.clear()
   renderer.ren.present()
 
-proc renderer_tick(univ: var Univ, dt: float) =
+proc renderer_tick(univ: Univ, dt: float) =
   for comp in cast[CompAlloc[Renderer]](univ.compAllocs[typedesc[Renderer].name]).comps.contents.mitems:
-    #echo repr comp.ren
-    #comp.tick(dt)
-    comp.tick(dt)
+    if comp.active:
+      comp.tick(dt)
 
 proc shutdown*(renderer: var Renderer) =
   renderer.win.destroy()
   renderer.ren.destroy()
   sdl2.quit()
 
-proc regRenderer*(univ: var Univ) =
-  discard#subscribe(getComp[TimestepMgr](univ).onTick, renderer_tick)
-
-
-
-proc initialize*(mgr: var TimestepMgr) =
-
-  echo "SHOULD NOT BE NIL:"
-  echo repr cast[CompAlloc[Renderer]](mgr.univ.compAllocs[typedesc[Renderer].name]).comps.contents[0].ren
-
-  while not mgr.univ[].destroying:
-    for e in mgr.onTick.subscriptions:
-      e(mgr.univ[], 0.0)
+proc regRenderer*(univ: Univ) =
+  subscribe(getComp[TimestepMgr](univ).onTick, renderer_tick)
+  discard

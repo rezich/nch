@@ -4,15 +4,18 @@ import
   tables,
   typetraits,
   sequtils,
-  future
-
-import sdl2, sdl2/gfx, sdl2.image, sdl2.ttf, basic2d, random, math
+  future,
+  sdl2,
+  sdl2/gfx,
+  sdl2/image,
+  sdl2/ttf,
+  basic2d,
+  random,
+  math
 
 {.experimental.}
 
-
 ### SYSTEM ###
-
 const
   compsPerPage = 1024
 
@@ -29,9 +32,8 @@ type
 
   Node* = object of RootObj
     name*: string
-    internalUniv*: ref Univ
-    internalDestroying: bool
-    relatives: OrderedTableRef[string, ptr Node]
+    internalUniv*: Univ
+    internalDestroying*: bool
   
   CompAllocBase* = ref object of RootObj
 
@@ -40,13 +42,21 @@ type
     newProc: proc (owner: Elem): T
     last: int
     vacancies: array[0..compsPerPage, T]
+  
+  Comp* = object of Node
+    active*: bool
+    owner*: Elem
+
+  CompRef* = object of RootObj
+    name: string
+    index: int
 
   Elem* = ref object of Node
+    elems: OrderedTableRef[string, Elem]
+    comps: OrderedTableRef[string, CompRef]
 
   Univ* = ref object of Elem
     compAllocs*: OrderedTableRef[string, CompAllocBase]
-
-  Comp* = object of Node
 
   Nch* = object of RootObj
     root*: ptr Univ
@@ -61,23 +71,24 @@ proc newEvent*[T](): Event[T] =
     subscriptions: newSeq[T]()
   )
 
-proc destroying*(node: ref Node): bool =
+proc destroying*[T: Node](node: T): bool =
   node.internalDestroying
     
-proc univ*(node: Node): ref Univ =
-  return node.internalUniv
+proc univ*[T: Elem](elem: T): Univ =
+  if elem.internalUniv == nil:
+    return cast[Univ](elem)
+  elem.internalUniv
 
-proc univ*(node: ref Node): ref Univ =
-  if node.internalUniv == nil:
-    return cast[ref Univ](box(node))
-  return node.internalUniv
+proc univ*[T: Comp](comp: T): Univ =
+  comp.internalUniv
 
 proc initElem[T: Elem](elem: var T, parent: Elem = nil) =
   if parent != nil:
     elem.internalUniv = parent.univ
   elem.internalDestroying = false
-  elem.relatives = newOrderedTable[string, ptr Node]()
-  elem.relatives[".."] = cast[ptr Node](addr(parent[]))
+  elem.elems = newOrderedTable[string, Elem]()
+  elem.elems[".."] = parent
+  elem.comps = newOrderedTable[string, CompRef]()
 
 proc initUniv*(univ: var Univ, name: string) =
   univ = Univ(
@@ -90,37 +101,36 @@ proc initUniv*(univ: var Univ, name: string) =
   if nch.root == nil:
     nch.root = addr univ
 
-proc destroy*[T: Univ](node: var T) =
-  node.internalDestroying = true
-  #[
-  if nch.root == addr node:
-    nch.root = nil
-    node = nil # ???
-  ]#
-  
 proc add*[T: Elem](parent: var T, name: string): Elem {.discardable.} =
   new(result)
   result.name = name
   initElem(result, cast[Elem](parent))
-  echo cast[ByteAddress](addr(result))
-  parent.relatives[name] = cast[ptr Node](addr(result))
+  parent.elems[name] = result
 
 proc initComp*[T: Comp](comp: var T, owner: Elem) =
   comp.name = typedesc[T].name
-  comp.relatives = newOrderedTable[string, ptr Node]()
+  comp.active = true
+  comp.owner = owner
   comp.internalUniv = owner.univ
   comp.internalDestroying = false
 
+proc newPage[T: Comp](prev: ptr Page[T] = nil): Page[T] =
+  result = Page[T](
+    next: nil
+  )
+  if prev != nil:
+    prev.next = addr(result)
+  for i in result.contents.mitems:
+    i.active = false
+
 proc newCompAlloc[T: Comp](newProc: proc (owner: Elem): T) : CompAlloc[T] =
   result = CompAlloc[T](
-    comps: Page[T](
-      next: nil
-    ),
+    comps: newPage[T](),
     last: 0,
     newProc: newProc
   )
 
-proc register*[T](univ: var Univ, newProc: proc (owner: Elem): T, regProc: proc (univ: var Univ) = nil) =
+proc register*[T](univ: Univ, newProc: proc (owner: Elem): T, regProc: proc (univ: Univ) = nil) =
   let name = typedesc[T].name
   if name in univ.compAllocs:
     echo "EXCEPTION: " & name & " already registered in this Univ"
@@ -130,7 +140,7 @@ proc register*[T](univ: var Univ, newProc: proc (owner: Elem): T, regProc: proc 
     regProc(univ)
 
 
-proc allocComp[T: Comp](univ: var Univ): ptr T =
+proc allocComp[T: Comp](univ: Univ): (ptr T, int) =
   let name = typedesc[T].name
   if name notin univ.compAllocs:
     echo "EXCEPTION: Comp not registered w/ Univ"
@@ -138,48 +148,61 @@ proc allocComp[T: Comp](univ: var Univ): ptr T =
   # TODO: use empty spaces if available
   let compAlloc = cast[CompAlloc[T]](univ.compAllocs[name])
   #if (compAlloc.last mod compsPerPage)
-  compAlloc.comps.contents[compAlloc.last] = compAlloc.newProc(univ)
-  result = addr compAlloc.comps.contents[compAlloc.last]
+  var index = compAlloc.last
+  compAlloc.comps.contents[index] = compAlloc.newProc(univ)
+  result = (addr compAlloc.comps.contents[compAlloc.last], index)
   compAlloc.last += 1
-  #return compAlloc.comps[compAlloc.comps.high]
 
-proc attach*[T: Comp](owner: var Node): ptr T {.discardable.} =
-  echo owner.name
-  echo owner.univ.name
-  result = allocComp[T](owner.univ)
-  if typedesc[T].name == "Renderer":
-    echo cast[ByteAddress](addr(result)[])
-  result.relatives["<"] = addr(owner)
-  owner.relatives[">" & result.name] = result
+proc attach*[T: Comp](owner: Elem): ptr T {.discardable.} =
+  var index : int
+  (result, index) = allocComp[T](owner.univ)
+  result.owner = owner
+  owner.comps[result.name] = CompRef(
+    name: result.name,
+    index: index
+  )
 
-proc getComp*[T: Comp](node: var Node): ptr T =
-  if typedesc[T].name notin node.univ.compAllocs:
-    echo "EXCEPTION: Comp " & typedesc[T].name & " not registered w/ Univ"
+proc attach*[T: Comp](owner: Univ) : ptr T {.discardable.} =
+  attach[T](cast[Elem](owner))
+
+proc getComp*[T: Comp](owner: Elem): ptr T =
+  let name = typedesc[T].name
+  if name notin owner.univ.compAllocs:
+    echo "EXCEPTION: Comp " & name & " not registered w/ Univ"
     return nil
-  let name = ">" & typedesc[T].name
-  if name notin node.relatives:
-    echo "EXCEPTION: Comp not found in Node"
+  if name notin owner.comps:
+    echo "EXCEPTION: Comp " & name & " not found in Node"
     return nil
-  return cast[ptr T](node.relatives[name])
+  var compAlloc = cast[CompAlloc[T]](owner.univ.compAllocs[name])
+  return cast[ptr T](addr(compAlloc.comps.contents[owner.comps[name].index])) #TODO: paging!
 
-proc getCompInternal*[T: Comp](node: ref Node): var T =
-  let name = ">" & typedesc[T].name
-  return cast[var T](node.relatives[name])
+proc getComp*[T: Comp](owner: Univ): ptr T =
+  getComp[T](cast[Elem](owner))
 
 proc getElem*(node: Elem, search: string): Elem =
   let name = search
-  if name notin node.relatives:
+  if name notin node.elems:
     echo "EXCEPTION: relative Elem not found"
     return nil
-  return cast[Elem](node.relatives[name])
+  return cast[Elem](node.elems[name])
 
-import nchpkg/sys.nim
+proc destroy*[T: Univ](node: var T) =
+  node.internalDestroying = true
+  #[
+  if nch.root == addr node:
+    nch.root = nil
+    node = nil # ???
+  ]#
+
+
+import nchpkg/sys
 export sys
 
 
 
-### DEMO ###
 
+
+### DEMO ###
 type
   Input {.pure.} = enum none, left, right, action, restart, quit
 
@@ -197,62 +220,25 @@ proc toInput*(key: Scancode): Input =
   of SDL_SCANCODE_ESCAPE: Input.quit
   else: Input.none
 
-### TESTS ###
-
 when isMainModule:
   var app: Univ
   initUniv(app, "nch test app")
-
   var world = app.add("world")
-  assert(world.relatives[".."].name == "nch test app")
-  echo cast[ByteAddress](addr(world[]))
-  for i in app.relatives.keys:
-    echo i
-  #echo app.relatives["world"].relatives[".."]
-  #assert(app.relatives["world"].name == "world")
-  
-  assert(addr(app) == nch.root)
 
   register[TimestepMgr](app, newTimestepMgr)
   attach[TimestepMgr](app)
-  register[TestComp](app, newTestComp)
+
   register[InputMgr[Input]](app, newInputMgr[Input], regInputMgr[Input])
   register[Renderer](app, newRenderer, regRenderer)
+  register[TestComp](app, newTestComp)
 
-  
-  attach[Renderer](app)
   attach[InputMgr[Input]](app)
-  attach[TestComp](world)
-  
+  attach[Renderer](app)
 
-  assert(world.relatives[">TestComp"] != nil)
-  assert(app.relatives[">InputMgr[nch.Input]"] != nil)
-
-  assert(getComp[InputMgr[Input]](app).getInput(Input.action) == InputState.up)
-
-  assert(getComp[TestComp](world) != nil)
-  assert(getComp[TimestepMgr](app) != nil)
-
-  assert(app.getElem("world") != nil)
-
-  getComp[InputMgr[Input]](app).setHandler(toInput)
-  #echo repr getComp[InputMgr[Input]](app).handler
-
-  # fake game loop time
-  
-  #getComp[InputMgr[Input]](app).initialize()
   getComp[Renderer](app).initialize()
+  getComp[InputMgr[Input]](app).setHandler(toInput)
 
-  getComp[Renderer](app).ren.setDrawColor(255, 0, 0, 255)
-  getComp[Renderer](app).ren.clear()
-  getComp[Renderer](app).ren.present()
-
-  echo cast[ByteAddress](addr(cast[CompAlloc[Renderer]](app.compAllocs[typedesc[Renderer].name]).comps.contents[0]))
-  echo cast[ByteAddress](addr(getComp[Renderer](app)[]))
-  echo cast[ByteAddress](addr(getCompInternal[Renderer](app)))
+  attach[TestComp](world)
 
   getComp[TimestepMgr](app).initialize()
 
-  getComp[Renderer](app).shutdown()
-  
-  #assert(app == nil)

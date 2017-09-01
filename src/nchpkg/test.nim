@@ -12,7 +12,6 @@ import sdl2, sdl2/gfx, sdl2.image, sdl2.ttf, basic2d, random, math
 
 
 ### SYSTEM ###
-
 const
   compsPerPage = 1024
 
@@ -108,10 +107,12 @@ proc initComp*[T: Comp](comp: var T, owner: Elem) =
   comp.internalUniv = owner.univ
   comp.internalDestroying = false
 
-proc newPage[T: Comp](): Page[T] =
+proc newPage[T: Comp](prev: ptr Page[T] = nil): Page[T] =
   result = Page[T](
     next: nil
   )
+  if prev != nil:
+    prev.next = addr(result)
   for i in result.contents.mitems:
     i.active = false
 
@@ -171,44 +172,175 @@ proc getComp*[T: Comp](owner: Elem): ptr T =
 proc getComp*[T: Comp](owner: Univ): ptr T =
   getComp[T](cast[Elem](owner))
 
+proc getElem*(node: Elem, search: string): Elem =
+  let name = search
+  if name notin node.elems:
+    echo "EXCEPTION: relative Elem not found"
+    return nil
+  return cast[Elem](node.elems[name])
+
+proc destroy*[T: Univ](node: var T) =
+  node.internalDestroying = true
+  #[
+  if nch.root == addr node:
+    nch.root = nil
+    node = nil # ???
+  ]#
 
 
-
-
+### TimestepMgr ###
 type
   TimestepMgr* = object of Comp
     fpsman: FpsManager
     onTick*: Event[proc (univ: Univ, dt: float)]
-    test*: int
 
 proc newTimestepMgr*(owner: Elem): TimestepMgr =
   result = TimestepMgr(
     onTick: newEvent[proc (univ: Univ, dt: float)](),
-    test: 8
   )
   result.initComp(owner)
 
+proc initialize*(mgr: var TimestepMgr) =
+  while not mgr.internalUniv.destroying:
+    for e in mgr.onTick.subscriptions:
+      e(mgr.internalUniv, 0.0)
 
 
+### InputMgr ###
+type
+  InputMgr*[T: enum] = object of Comp
+    input: array[T, bool]
+    inputLast: array[T, bool]
+    handler*: proc (key: Scancode): T
+  
+  InputState* {.pure.} = enum up, pressed, down, released
+
+proc tick*[T: enum](mgr: var InputMgr[T], dt: float) =
+  shallowCopy(mgr.inputLast, mgr.input)
+  var event = defaultEvent
+  while pollEvent(event):
+    case event.kind
+    of QuitEvent:
+      mgr.internalUniv.destroy()
+      discard
+    of KeyDown:
+      mgr.input[mgr.handler(event.key.keysym.scancode)] = true
+    of KeyUp:
+      mgr.input[mgr.handler(event.key.keysym.scancode)] = false
+    else:
+      discard
+
+proc inputMgr_tick*[T: enum](univ: Univ, dt: float) =
+  for comp in cast[CompAlloc[InputMgr[T]]](univ.compAllocs[typedesc[InputMgr[T]].name]).comps.contents.mitems:
+    tick[T](comp, dt)
+
+proc newInputMgr*[T: enum](owner: Elem): InputMgr[T] =
+  result = InputMgr[T]()
+  result.initComp(owner)
+
+proc regInputMgr*[T: enum](univ: Univ) =
+  subscribe(getComp[TimestepMgr](univ).onTick, inputMgr_tick[T])
+
+
+proc setHandler*[T: enum](mgr: var InputMgr[T], handler: proc (key: Scancode): T) =
+  mgr.handler = handler
+
+proc getInput*[T: enum](mgr: var InputMgr[T], input: T): InputState =
+  if not mgr.input[input] and not mgr.inputLast[input]: return InputState.up
+  if mgr.input[input] and not mgr.inputLast[input]: return InputState.pressed
+  if mgr.input[input] and mgr.inputLast[input]: return InputState.down
+  return InputState.released
+
+
+
+
+### Renderer ###
+type
+  Renderer* = object of Comp
+    ren*: RendererPtr
+    win: WindowPtr
+  
+  SDLException = object of Exception
+
+proc newRenderer*(owner: Elem): Renderer =
+  result = Renderer()
+  result.initComp(owner)
+
+template sdlFailIf(cond: typed, reason: string) =
+  if cond: raise SDLException.newException(
+    reason & ", SDL error: " & $getError())
+
+proc initialize*(renderer: var Renderer) =
+  sdlFailIf(not sdl2.init(INIT_VIDEO or INIT_TIMER or INIT_EVENTS)):
+    "SDL2 initialization failed"
+  sdlFailIf(not setHint("SDL_RENDER_SCALE_QUALITY", "0")):
+    "Point texture filtering could not be enabled"
+
+  renderer.win = createWindow(title = renderer.internalUniv.name,
+    x = SDL_WINDOWPOS_CENTERED, y = SDL_WINDOWPOS_CENTERED,
+    w = 160, h = 120, flags = SDL_WINDOW_SHOWN)
+  sdlFailIf renderer.win.isNil: "Window could not be created"
+
+  renderer.ren = renderer.win.createRenderer(index = -1,
+    flags = Renderer_Accelerated or Renderer_PresentVsync)
+  sdlFailIf renderer.ren.isNil: "Renderer could not be created"
+
+proc tick(renderer: var Renderer, dt: float) =
+  #echo repr renderer.ren
+  renderer.ren.setDrawColor(0, 255, 0, 255)
+  renderer.ren.clear()
+  renderer.ren.present()
+
+proc renderer_tick(univ: Univ, dt: float) =
+  for comp in cast[CompAlloc[Renderer]](univ.compAllocs[typedesc[Renderer].name]).comps.contents.mitems:
+    comp.tick(dt)
+
+proc shutdown*(renderer: var Renderer) =
+  renderer.win.destroy()
+  renderer.ren.destroy()
+  sdl2.quit()
+
+proc regRenderer*(univ: Univ) =
+  subscribe(getComp[TimestepMgr](univ).onTick, renderer_tick)
+  discard
+
+
+
+
+
+
+
+### DEMO ###
+type
+  Input {.pure.} = enum none, left, right, action, restart, quit
+
+  TestComp = object of Comp
+    things: int
+
+proc newTestComp(owner: Elem): TestComp =
+  result = TestComp(things: 42)
+  result.initComp(owner)
+  
+proc toInput*(key: Scancode): Input =
+  case key
+  of SDL_SCANCODE_LEFT: Input.left
+  of SDL_SCANCODE_RIGHT: Input.right
+  of SDL_SCANCODE_ESCAPE: Input.quit
+  else: Input.none
 
 when isMainModule:
   var app: Univ
   initUniv(app, "nch test app")
   var world = app.add("world")
-  assert(world.elems[".."].name == "nch test app")
-  assert(app.elems["world"].name == "world")
-  assert(addr(app) == nch.root)
 
   register[TimestepMgr](app, newTimestepMgr)
-  assert(app.compAllocs["TimestepMgr"] != nil)
-
   attach[TimestepMgr](app)
-  assert(app.comps["TimestepMgr"].name == "TimestepMgr")
-  assert(getComp[TimestepMgr](app).name == "TimestepMgr")
-  assert(getComp[TimestepMgr](app).test == 8)
-  getComp[TimestepMgr](app).test = 12
-  assert(getComp[TimestepMgr](app).test == 12)
 
-  for tsm in cast[CompAlloc[TimestepMgr]](app.compAllocs["TimestepMgr"]).comps.contents:
-    if tsm.active:
-      echo tsm.test
+  register[InputMgr[Input]](app, newInputMgr[Input], regInputMgr[Input])
+  attach[InputMgr[Input]](app)
+  register[Renderer](app, newRenderer, regRenderer)
+  attach[Renderer](app)
+
+  getComp[Renderer](app).initialize()
+  getComp[InputMgr[Input]](app).setHandler(toInput)
+  getComp[TimestepMgr](app).initialize()
