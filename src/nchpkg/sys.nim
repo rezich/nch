@@ -40,7 +40,7 @@ type
   
   InputState* {.pure.} = enum up, pressed, down, released
 
-proc tick*[T: enum](mgr: var InputMgr[T], dt: float) =
+proc tick*[T: enum](mgr: ptr InputMgr[T], dt: float) =
   shallowCopy(mgr.inputLast, mgr.input)
   var event = defaultEvent
   while pollEvent(event):
@@ -56,7 +56,7 @@ proc tick*[T: enum](mgr: var InputMgr[T], dt: float) =
       discard
 
 proc inputMgr_tick*[T: enum](univ: Univ, dt: float) =
-  for comp in cast[CompAlloc[InputMgr[T]]](univ.compAllocs[typedesc[InputMgr[T]].name]).comps.contents.mitems:
+  for comp in mitems[InputMgr[T]](univ):
     if comp.active:
       tick[T](comp, dt)
 
@@ -111,14 +111,14 @@ proc initialize*(renderer: var Renderer) =
     flags = Renderer_Accelerated or Renderer_PresentVsync)
   sdlFailIf renderer.ren.isNil: "Renderer could not be created"
 
-proc tick(renderer: var Renderer, dt: float) =
+proc tick(renderer: ptr Renderer, dt: float) =
   #echo repr renderer.ren
   renderer.ren.setDrawColor(0, 64, 0, 255)
   renderer.ren.clear()
   renderer.ren.present()
 
 proc renderer_tick(univ: Univ, dt: float) =
-  for comp in cast[CompAlloc[Renderer]](univ.compAllocs[typedesc[Renderer].name]).comps.contents.mitems:
+  for comp in mItems[Renderer](univ):
     if comp.active:
       comp.tick(dt)
 

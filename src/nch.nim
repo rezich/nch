@@ -41,7 +41,7 @@ type
     comps*: Page[T]
     newProc: proc (owner: Elem): T
     last: int
-    vacancies: array[0..compsPerPage, T]
+    vacancies: array[0..compsPerPage, int]
   
   Comp* = object of Node
     active*: bool
@@ -136,7 +136,7 @@ proc register*[T](univ: Univ, newProc: proc (owner: Elem): T, regProc: proc (uni
     echo "EXCEPTION: " & name & " already registered in this Univ"
     return
   univ.compAllocs[name] = newCompAlloc[T](newProc)
-  if (regProc != nil):
+  if regProc != nil:
     regProc(univ)
 
 
@@ -151,7 +151,7 @@ proc allocComp[T: Comp](univ: Univ): (ptr T, int) =
   var index = compAlloc.last
   compAlloc.comps.contents[index] = compAlloc.newProc(univ)
   result = (addr compAlloc.comps.contents[compAlloc.last], index)
-  compAlloc.last += 1
+  inc compAlloc.last
 
 proc attach*[T: Comp](owner: Elem): ptr T {.discardable.} =
   var index : int
@@ -194,6 +194,14 @@ proc destroy*[T: Univ](node: var T) =
     node = nil # ???
   ]#
 
+# iterates through all active instances of a given Comp in a Univ
+iterator mitems*[T: Comp](univ: Univ): ptr T =
+  var curPage = addr cast[CompAlloc[T]](univ.compAllocs[typedesc[T].name]).comps
+  while curPage != nil:
+    for i in curPage.contents.mitems:
+      if i.active:
+        yield addr i
+    curPage = curPage.next
 
 import nchpkg/sys
 export sys
@@ -209,7 +217,7 @@ type
   TestComp = object of Comp
     things: int
 
-proc newTestComp(owner: Elem): TestComp =
+proc newTestComp*(owner: Elem): TestComp =
   result = TestComp(things: 42)
   result.initComp(owner)
   
@@ -233,12 +241,19 @@ when isMainModule:
   register[TestComp](app, newTestComp)
 
   attach[InputMgr[Input]](app)
-  attach[Renderer](app)
-
-  getComp[Renderer](app).initialize()
   getComp[InputMgr[Input]](app).setHandler(toInput)
 
+  attach[Renderer](app)
+  getComp[Renderer](app).initialize()
+
   attach[TestComp](world)
+
+  for i in mitems[TestComp](app):
+    echo i.things
+    i.things = 88
+  
+  for i in mitems[TestComp](app):
+    echo i.things
 
   getComp[TimestepMgr](app).initialize()
 
