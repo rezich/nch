@@ -203,6 +203,10 @@ iterator mitems*[T: Comp](univ: Univ): ptr T =
         yield addr i
     curPage = curPage.next
 
+iterator items*[T: proc](event: Event[T]): T =
+  for i in event.subscriptions:
+    yield i
+
 import nchpkg/sys
 export sys
 
@@ -241,7 +245,7 @@ when isMainModule:
   register[TestComp](app, newTestComp)
 
   attach[InputMgr[Input]](app)
-  getComp[InputMgr[Input]](app).setHandler(toInput)
+  getComp[InputMgr[Input]](app).initialize(toInput)
 
   attach[Renderer](app)
   getComp[Renderer](app).initialize()
@@ -256,4 +260,3 @@ when isMainModule:
     echo i.things
 
   getComp[TimestepMgr](app).initialize()
-

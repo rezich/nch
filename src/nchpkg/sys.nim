@@ -27,7 +27,7 @@ proc newTimestepMgr*(owner: Elem): TimestepMgr =
 
 proc initialize*(mgr: var TimestepMgr) =
   while not mgr.univ.internalDestroying:
-    for e in mgr.onTick.subscriptions:
+    for e in mgr.onTick:
       e(mgr.internalUniv, 0.0)
 
 
@@ -57,8 +57,7 @@ proc tick*[T: enum](mgr: ptr InputMgr[T], dt: float) =
 
 proc inputMgr_tick*[T: enum](univ: Univ, dt: float) =
   for comp in mitems[InputMgr[T]](univ):
-    if comp.active:
-      tick[T](comp, dt)
+    tick[T](comp, dt)
 
 proc newInputMgr*[T: enum](owner: Elem): InputMgr[T] =
   result = InputMgr[T]()
@@ -67,8 +66,7 @@ proc newInputMgr*[T: enum](owner: Elem): InputMgr[T] =
 proc regInputMgr*[T: enum](univ: Univ) =
   subscribe(getComp[TimestepMgr](univ).onTick, inputMgr_tick[T])
 
-
-proc setHandler*[T: enum](mgr: var InputMgr[T], handler: proc (key: Scancode): T) =
+proc initialize*[T: enum](mgr: var InputMgr[T], handler: proc (key: Scancode): T) =
   mgr.handler = handler
 
 proc getInput*[T: enum](mgr: var InputMgr[T], input: T): InputState =
@@ -119,8 +117,7 @@ proc tick(renderer: ptr Renderer, dt: float) =
 
 proc renderer_tick(univ: Univ, dt: float) =
   for comp in mItems[Renderer](univ):
-    if comp.active:
-      comp.tick(dt)
+    comp.tick(dt)
 
 proc shutdown*(renderer: var Renderer) =
   renderer.win.destroy()
