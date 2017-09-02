@@ -315,10 +315,7 @@ iterator items*[T: proc](event: Event[T]): (T, CompRef) =
   for i in event.after:
     yield i
 
-import nchpkg/sys
-export sys
-
-
+import nchpkg/sys, nchpkg/vgfx
 
 
 
@@ -395,5 +392,7 @@ when isMainModule:
   var p1 = world.add("player1")
   attach[VecTri](p1)
   attach[PlayerController](p1)
+
+  discard vecFont("sys")
 
   getComp[TimestepMgr](app).initialize()

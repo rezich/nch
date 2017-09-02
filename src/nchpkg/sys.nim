@@ -156,36 +156,3 @@ proc shutdown*(renderer: var Renderer) =
 # register Renderer with a given Univ
 proc regRenderer*(univ: Univ) =
   after(getComp[TimestepMgr](univ).evTick, renderer_tick)
-
-proc point*(x: int, y: int): Point =
-  (x.cint, y.cint)
-
-converter toPoint*(v: Vector2d): Point = result = point(v.x, v.y)
-
-proc drawPoly*(renderer: ptr Renderer, points: var openArray[Point]) =
-  renderer.ren.setDrawColor(0, 192, 0, 255)
-  renderer.ren.drawLines(addr points[0], points.len.cint)
-
-
-### VecTri
-type
-  VecTri* = object of Comp
-
-proc newVecTri*(owner: Elem): VecTri =
-  result = VecTri()
-
-proc vecTri_draw(univ: Univ, ren: ptr Renderer) =
-  for comp in mItems[VecTri](univ):
-    let owner = comp.owner
-    var points = newSeq[Point]()
-    points.add(point(owner.pos.x + 0, owner.pos.y + 0))
-    points.add(point(owner.pos.x + 100, owner.pos.y + 100))
-    points.add(point(owner.pos.x + 100, owner.pos.y + 0))
-    points.add(point(owner.pos.x + 0, owner.pos.y + 0))
-    ren.drawPoly(points)
-
-proc regVecTri*(univ: Univ) =
-  on(getComp[Renderer](univ).evDraw, vecTri_draw)
-
-
-
