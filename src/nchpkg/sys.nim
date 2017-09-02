@@ -17,20 +17,21 @@ import
 type
   TimestepMgr* = object of Comp
     fpsman: FpsManager
-    onTick*: nch.Event[proc (univ: Univ, dt: float)]
+    evTick*: nch.Event[proc (univ: Univ, dt: float)]
 
 # create a new TimestepMgr instance
 proc newTimestepMgr*(owner: Elem): TimestepMgr =
   result = TimestepMgr(
-    onTick: newEvent[proc (univ: Univ, dt: float)](),
+    evTick: newEvent[proc (univ: Univ, dt: float)]()
   )
-  result.initComp(owner)
+  #result.initComp(owner)
 
 # initialize a given TimestepMgr
 proc initialize*(mgr: var TimestepMgr) =
   while not mgr.univ.internalDestroying:
-    for e in mgr.onTick:
-      e(mgr.internalUniv, 0.0)
+    for ev in mgr.evTick:
+      let (p, _) = ev
+      p(mgr.internalUniv, 0.0)
 
 
 ### InputMgr - handles user input ###
@@ -71,7 +72,7 @@ proc newInputMgr*[T: enum](owner: Elem): InputMgr[T] =
 
 # register InputMgr with a given Univ
 proc regInputMgr*[T: enum](univ: Univ) =
-  subscribe(getComp[TimestepMgr](univ).onTick, inputMgr_tick[T])
+  before(getComp[TimestepMgr](univ).evTick, inputMgr_tick[T])
 
 # initialize a given InputMgr
 proc initialize*[T: enum](mgr: var InputMgr[T], handler: proc (key: Scancode): T) =
@@ -92,14 +93,17 @@ type
   Renderer* = object of Comp
     ren*: RendererPtr
     win: WindowPtr
+    evDraw*: nch.Event[proc (univ: Univ, ren: ptr Renderer)]
   
   # exception sub-type for SDL things
   SDLException = object of Exception
 
 # create a new Renderer instance
 proc newRenderer*(owner: Elem): Renderer =
-  result = Renderer()
-  result.initComp(owner)
+  result = Renderer(
+    evDraw: newEvent[proc (univ: Univ, ren: ptr Renderer)]()
+  )
+  #result.initComp(owner)
 
 # allow SDL to fail gracefully
 template sdlFailIf(cond: typed, reason: string) =
@@ -128,11 +132,16 @@ proc tick(renderer: ptr Renderer, dt: float) =
   renderer.ren.setDrawColor(0, 64, 0, 255)
   renderer.ren.clear()
 
-  renderer.ren.setDrawColor(0, 192, 0, 255)
+  #[renderer.ren.setDrawColor(0, 192, 0, 255)
   var points = newSeq[Point]()
   points.add((0.cint, 0.cint))
   points.add((100.cint, 100.cint))
-  renderer.ren.drawLines(addr points[0], points.len.cint)
+  renderer.ren.drawLines(addr points[0], points.len.cint)]#
+
+
+  for ev in renderer.evDraw:
+    let (p, _) = ev
+    p(renderer.internalUniv, renderer)
 
   renderer.ren.present()
 
@@ -149,5 +158,38 @@ proc shutdown*(renderer: var Renderer) =
 
 # register Renderer with a given Univ
 proc regRenderer*(univ: Univ) =
-  subscribe(getComp[TimestepMgr](univ).onTick, renderer_tick)
-  discard
+  after(getComp[TimestepMgr](univ).evTick, renderer_tick)
+
+proc point*(x: int, y: int): Point =
+  (x.cint, y.cint)
+
+proc drawPoly*(renderer: ptr Renderer, points: var openArray[Point]) =
+  renderer.ren.setDrawColor(0, 192, 0, 255)
+  renderer.ren.drawLines(addr points[0], points.len.cint)
+
+
+### VecTri
+type
+  VecTri* = object of Comp
+
+proc newVecTri*(owner: Elem): VecTri =
+  result = VecTri()
+  echo owner.name
+  #result.initComp(owner)
+
+proc vecTri_draw(univ: Univ, ren: ptr Renderer) =
+  for comp in mItems[VecTri](univ):
+    #echo "adf"
+    var points = newSeq[Point]()
+    points.add(point(0, 0))
+    points.add(point(100, 100))
+    points.add(point(100, 0))
+    points.add(point(0, 0))
+    ren.drawPoly(points)
+    #echo "yo"
+
+proc regVecTri*(univ: Univ) =
+  on(getComp[Renderer](univ).evDraw, vecTri_draw)
+
+
+

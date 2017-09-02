@@ -27,10 +27,6 @@ type
   Page*[T] = object of RootObj
     contents*: array[0..compsPerPage, T]
     next: ptr Page[T]
-  
-  #TODO
-  Event*[T: proc] = ref object of RootObj
-    subscriptions*: seq[T]
 
   #TODO
   Node* = object of RootObj
@@ -57,6 +53,13 @@ type
   CompRef* = object of RootObj
     name: string
     index: int
+    empty*: bool
+  
+  #TODO
+  Event*[T: proc] = ref object of RootObj
+    before*: seq[(T, CompRef)]
+    on*: seq[(T, CompRef)]
+    after*: seq[(T, CompRef)]
 
   # element, the smallest unit of organization
   Elem* = ref object of Node
@@ -77,14 +80,29 @@ type
 # singleton container for the entire engine
 var nch* = Nch(root: nil)
 
+proc nilCompRef*(): CompRef =
+  CompRef(
+    empty: true
+  )
+
 # subscribe a proc to an Event
-proc subscribe*[T](event: Event[T], procedure: T) =
-  event.subscriptions.add(procedure)
+proc before*[T](event: Event[T], procedure: T) =
+  event.before.add((procedure, nilCompRef()))
+
+# subscribe a proc to an Event
+proc on*[T](event: Event[T], procedure: T) =
+  event.on.add((procedure, nilCompRef()))
+
+# subscribe a proc to an Event
+proc after*[T](event: Event[T], procedure: T) =
+  event.after.add((procedure, nilCompRef()))
 
 # create a new Event
 proc newEvent*[T](): Event[T] =
   Event[T](
-    subscriptions: newSeq[T]()
+    before: newSeq[(T, CompRef)](),
+    on: newSeq[(T, CompRef)](),
+    after: newSeq[(T, CompRef)]()
   )
 
 # gets whether or not this Node is destroying
@@ -134,6 +152,7 @@ proc add*[T: Elem](parent: var T, name: string): Elem {.discardable.} =
 
 # initialize a Comp
 proc initComp*[T: Comp](comp: var T, owner: Elem) =
+  #echo owner.name
   comp.name = typedesc[T].name
   comp.active = true
   comp.owner = owner
@@ -176,7 +195,7 @@ proc register*[T](univ: Univ, newProc: proc (owner: Elem): T, regProc: proc (uni
     regProc(univ)
 
 # allocate a new Comp inside a given Univ
-proc allocComp[T: Comp](univ: Univ): (ptr T, int) =
+proc allocComp[T: Comp](univ: Univ, owner: Elem): (ptr T, int) =
   let name = typedesc[T].name
   if name notin univ.compAllocs:
     echo "EXCEPTION: Comp not registered w/ Univ"
@@ -197,14 +216,15 @@ proc allocComp[T: Comp](univ: Univ): (ptr T, int) =
     if curPage.next == nil:
       newPage[T](curPage)
     curPage = curPage.next
-  curPage.contents[index] = compAlloc.newProc(univ)
+  curPage.contents[index] = compAlloc.newProc(owner)
   result = (cast[ptr T](addr(curPage.contents[index])), realIndex)
   
 # create a new instance of a Comp sub-type and attach it to an Elem
 proc attach*[T: Comp](owner: Elem): ptr T {.discardable.} =
+  #TODO: figure out a way to check if owner already has the same Comp
   var index : int
-  (result, index) = allocComp[T](owner.univ)
-  result.owner = owner
+  (result, index) = allocComp[T](owner.univ, owner)
+  result.initComp(owner)
   owner.comps[result.name] = CompRef(
     name: result.name,
     index: index
@@ -287,8 +307,12 @@ iterator mitems*[T: Comp](univ: Univ): ptr T =
     curPage = curPage.next
 
 # iterate through all procs in a subscription
-iterator items*[T: proc](event: Event[T]): T =
-  for i in event.subscriptions:
+iterator items*[T: proc](event: Event[T]): (T, CompRef) =
+  for i in event.before:
+    yield i
+  for i in event.on:
+    yield i
+  for i in event.after:
     yield i
 
 import nchpkg/sys
@@ -331,41 +355,18 @@ when isMainModule:
 
   register[InputMgr[Input]](app, newInputMgr[Input], regInputMgr[Input])
   register[Renderer](app, newRenderer, regRenderer)
+  attach[Renderer](app).initialize()
   register[TestComp](app, newTestComp)
 
-  attach[InputMgr[Input]](app)
-  getComp[InputMgr[Input]](app).initialize(toInput)
+  register[VecTri](app, newVecTri, regVecTri)
 
-  attach[Renderer](app)
-  getComp[Renderer](app).initialize()
+  attach[InputMgr[Input]](app).initialize(toInput)
 
   #attach[TestComp](world)
 
+  attach[VecTri](app)
+
   var p1 = world.add("player1")
-  attach[TestComp](p1)
-  getComp[TestComp](p1).things = 108
-  var p2 = world.add("player2")
-  attach[TestComp](p2)
-  var p3 = world.add("player3")
-  attach[TestComp](p3)
-
-  destroy(p3)
-  bury(p3)
-
-  var p4 = world.add("player4")
-  attach[TestComp](p4)
-  echo getComp[TestComp](p4).things
-
-  var p5 = world.add("player5")
-  attach[TestComp](p5)
-
-  destroy(p1)
-  bury(p1)
-  
-  var p6 = world.add("player6")
-  attach[TestComp](p6)
-
-  var p7 = world.add("player7")
-  attach[TestComp](p7)
+  attach[VecTri](p1)
 
   getComp[TimestepMgr](app).initialize()
