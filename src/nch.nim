@@ -23,65 +23,85 @@ proc box*[T](x: T): ref T =
   new(result); result[] = x
 
 type
+  # memory manager container
   Page*[T] = object of RootObj
     contents*: array[0..compsPerPage, T]
     next: ptr Page[T]
   
+  #TODO
   Event*[T: proc] = ref object of RootObj
     subscriptions*: seq[T]
 
+  #TODO
   Node* = object of RootObj
     name*: string
     internalUniv*: Univ
     internalDestroying*: bool
   
+  #TODO
   CompAllocBase* = ref object of RootObj
     vacancies: seq[int]
 
+  # Comp allocator, stored in a Univ
   CompAlloc*[T] = ref object of CompAllocBase
     comps*: Page[T]
     newProc: proc (owner: Elem): T
     last: int
   
+  # component, the smallest unit of functionality
   Comp* = object of Node
     active*: bool
     owner*: Elem
 
+  # component reference, secretly just an index
   CompRef* = object of RootObj
     name: string
     index: int
 
+  # element, the smallest unit of organization
   Elem* = ref object of Node
     elems: OrderedTableRef[string, Elem]
     comps: OrderedTableRef[string, CompRef]
+    pos: Vector2d
+    scale: Vector2d
+    rot: float
 
+  # universe, top-level element
   Univ* = ref object of Elem
     compAllocs*: OrderedTableRef[string, CompAllocBase]
 
+  # container for the entire engine
   Nch* = object of RootObj
     root*: ptr Univ
 
+# singleton container for the entire engine
 var nch* = Nch(root: nil)
 
+# subscribe a proc to an Event
 proc subscribe*[T](event: Event[T], procedure: T) =
   event.subscriptions.add(procedure)
 
+# create a new Event
 proc newEvent*[T](): Event[T] =
   Event[T](
     subscriptions: newSeq[T]()
   )
 
+# gets whether or not this Node is destroying
 proc destroying*[T: Node](node: T): bool =
   node.internalDestroying
-    
+
+# gets the Univ the given Elem is a part of
 proc univ*[T: Elem](elem: T): Univ =
   if elem.internalUniv == nil:
     return cast[Univ](elem)
   elem.internalUniv
 
+# gets the Univ the given Comp is a part of
 proc univ*[T: Comp](comp: T): Univ =
   comp.internalUniv
 
+# initialize an Elem
 proc initElem[T: Elem](elem: var T, parent: Elem = nil) =
   if parent != nil:
     elem.internalUniv = parent.univ
@@ -89,7 +109,11 @@ proc initElem[T: Elem](elem: var T, parent: Elem = nil) =
   elem.elems = newOrderedTable[string, Elem]()
   elem.elems[".."] = parent
   elem.comps = newOrderedTable[string, CompRef]()
+  elem.pos = vector2d(0.0, 0.0)
+  elem.scale = vector2d(1.0, 1.0)
+  elem.rot = 0.0
 
+# initialize a Univ
 proc initUniv*(univ: var Univ, name: string) =
   univ = Univ(
     name: name,
@@ -101,12 +125,14 @@ proc initUniv*(univ: var Univ, name: string) =
   if nch.root == nil:
     nch.root = addr univ
 
+# add an Elem as a child of a given Elem
 proc add*[T: Elem](parent: var T, name: string): Elem {.discardable.} =
   new(result)
   result.name = name
   initElem(result, cast[Elem](parent))
   parent.elems[name] = result
 
+# initialize a Comp
 proc initComp*[T: Comp](comp: var T, owner: Elem) =
   comp.name = typedesc[T].name
   comp.active = true
@@ -114,6 +140,7 @@ proc initComp*[T: Comp](comp: var T, owner: Elem) =
   comp.internalUniv = owner.univ
   comp.internalDestroying = false
 
+# create the first Page for the memory manager
 proc newPage[T: Comp](): Page[T] =
   result = Page[T](
     next: nil
@@ -121,6 +148,7 @@ proc newPage[T: Comp](): Page[T] =
   for i in result.contents.mitems:
     i.active = false
 
+# create an additional Page for the memory manager
 proc newPage[T: Comp](prev: ptr Page[T]): ptr Page[T] {.discardable.} =
   result = cast[ptr Page[T]](alloc(sizeof(Page[T])))
   result.next = nil
@@ -128,6 +156,7 @@ proc newPage[T: Comp](prev: ptr Page[T]): ptr Page[T] {.discardable.} =
   for i in result.contents.mitems:
     i.active = false
 
+# create a new CompAlloc for the memory manager
 proc newCompAlloc[T: Comp](newProc: proc (owner: Elem): T) : CompAlloc[T] =
   result = CompAlloc[T](
     comps: newPage[T](),
@@ -136,6 +165,7 @@ proc newCompAlloc[T: Comp](newProc: proc (owner: Elem): T) : CompAlloc[T] =
     vacancies: newSeq[int]()
   )
 
+# register a Comp sub-type into a given Univ
 proc register*[T](univ: Univ, newProc: proc (owner: Elem): T, regProc: proc (univ: Univ) = nil) =
   let name = typedesc[T].name
   if name in univ.compAllocs:
@@ -145,7 +175,7 @@ proc register*[T](univ: Univ, newProc: proc (owner: Elem): T, regProc: proc (uni
   if regProc != nil:
     regProc(univ)
 
-
+# allocate a new Comp inside a given Univ
 proc allocComp[T: Comp](univ: Univ): (ptr T, int) =
   let name = typedesc[T].name
   if name notin univ.compAllocs:
@@ -154,7 +184,7 @@ proc allocComp[T: Comp](univ: Univ): (ptr T, int) =
   
   let compAlloc = cast[CompAlloc[T]](univ.compAllocs[name])
   var index: int
-  if compAlloc.vacancies.len > 0:
+  if compAlloc.vacancies.len > 0: # use a vacant Comp if there is one
     index = compAlloc.vacancies.pop
   else:
     index = compAlloc.last
@@ -162,7 +192,7 @@ proc allocComp[T: Comp](univ: Univ): (ptr T, int) =
   
   let realIndex = index
   var curPage = addr compAlloc.comps
-  while index >= compsPerPage:
+  while index >= compsPerPage: # skip ahead to the necessary Page, given the index
     index = index - compsPerPage
     if curPage.next == nil:
       newPage[T](curPage)
@@ -170,7 +200,7 @@ proc allocComp[T: Comp](univ: Univ): (ptr T, int) =
   curPage.contents[index] = compAlloc.newProc(univ)
   result = (cast[ptr T](addr(curPage.contents[index])), realIndex)
   
-
+# create a new instance of a Comp sub-type and attach it to an Elem
 proc attach*[T: Comp](owner: Elem): ptr T {.discardable.} =
   var index : int
   (result, index) = allocComp[T](owner.univ)
@@ -180,9 +210,11 @@ proc attach*[T: Comp](owner: Elem): ptr T {.discardable.} =
     index: index
   )
 
+# create a new instance of a Comp sub-type and attach it to a Univ
 proc attach*[T: Comp](owner: Univ) : ptr T {.discardable.} =
   attach[T](cast[Elem](owner))
 
+# get the instance of a Comp sub-type attached to a given Elem
 proc getComp*[T: Comp](owner: Elem): ptr T =
   let name = typedesc[T].name
   if name notin owner.univ.compAllocs:
@@ -194,21 +226,25 @@ proc getComp*[T: Comp](owner: Elem): ptr T =
   var compAlloc = cast[CompAlloc[T]](owner.univ.compAllocs[name])
   var curPage = addr compAlloc.comps
   var index = owner.comps[name].index
-  while index >= compsPerPage:
+  while index >= compsPerPage: # skip ahead to the given Page, given the index
     index = index - compsPerPage
     curPage = curPage.next
   addr curPage.contents[index]
 
+# get the instance of a Comp sub-type attached to a given Univ
 proc getComp*[T: Comp](owner: Univ): ptr T =
   getComp[T](cast[Elem](owner))
 
+# get a named child Elem of a given Elem
 proc getElem*(node: Elem, search: string): Elem =
+  #TODO: upgrade to parse `search`, allowing for hierarchical Elem tree traversal
   let name = search
   if name notin node.elems:
     echo "EXCEPTION: relative Elem not found"
     return nil
   cast[Elem](node.elems[name])
 
+# destroy a given Univ
 proc destroy*[T: Univ](node: var T) =
   node.internalDestroying = true
   #[
@@ -217,35 +253,40 @@ proc destroy*[T: Univ](node: var T) =
     node = nil # ???
   ]#
 
+# destroy a given Elem
 proc destroy*[T: Elem](elem: T) =
   elem.internalDestroying = true
 
-proc finalDestroy[T: Elem](elem: var T) =
+# "finish off" a given Elem. do this e.g. at the end of a frame
+proc bury*[T: Elem](elem: var T) =
   for i in elem.comps.pairs:
     var key: string
     var val: CompRef
     (key, val) = i
     
-    elem.univ.compAllocs[key].vacancies.add(val.index)
+    elem.univ.compAllocs[key].vacancies.add(val.index) # add a vacancy to the memory manager
   elem = nil
 
+# destroy a given instance of a Comp sub-type
 proc destroy*[T: Comp](comp: ptr T) =
   comp.active = false
   comp.internalDestroying = true
 
-proc finalDestroy[T: Comp](comp: var ptr T) =
+# "finish off" a given instance of a Comp sub-type. do this e.g. at the end of a frame
+proc bury[T: Comp](comp: var ptr T) =
   #TODO: onDestroy?
   discard
 
-# iterates through all active instances of a given Comp in a Univ
+# iterate through all active instances of a given Comp sub-type in a given Univ
 iterator mitems*[T: Comp](univ: Univ): ptr T =
   var curPage = addr cast[CompAlloc[T]](univ.compAllocs[typedesc[T].name]).comps
   while curPage != nil:
     for i in curPage.contents.mitems:
-      if i.active:
+      if i.active: # skip inactive Comps
         yield addr i
     curPage = curPage.next
 
+# iterate through all procs in a subscription
 iterator items*[T: proc](event: Event[T]): T =
   for i in event.subscriptions:
     yield i
@@ -259,15 +300,19 @@ export sys
 
 ### DEMO ###
 type
+  # input definitions for InputMgr
   Input {.pure.} = enum none, left, right, action, restart, quit
 
+  # sample Comp
   TestComp = object of Comp
     things: int
 
+# create a new TestComp instance
 proc newTestComp*(owner: Elem): TestComp =
   result = TestComp(things: 42)
   result.initComp(owner)
-  
+
+# convert input scancodes into an Input
 proc toInput*(key: Scancode): Input =
   case key
   of SDL_SCANCODE_LEFT: Input.left
@@ -275,6 +320,7 @@ proc toInput*(key: Scancode): Input =
   of SDL_SCANCODE_ESCAPE: Input.quit
   else: Input.none
 
+# tests
 when isMainModule:
   var app: Univ
   initUniv(app, "nch test app")
@@ -304,7 +350,7 @@ when isMainModule:
   attach[TestComp](p3)
 
   destroy(p3)
-  finalDestroy(p3)
+  bury(p3)
 
   var p4 = world.add("player4")
   attach[TestComp](p4)
@@ -314,7 +360,7 @@ when isMainModule:
   attach[TestComp](p5)
 
   destroy(p1)
-  finalDestroy(p1)
+  bury(p1)
   
   var p6 = world.add("player6")
   attach[TestComp](p6)
