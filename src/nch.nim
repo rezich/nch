@@ -65,9 +65,9 @@ type
   Elem* = ref object of Node
     elems: OrderedTableRef[string, Elem]
     comps: OrderedTableRef[string, CompRef]
-    pos: Vector2d
-    scale: Vector2d
-    rot: float
+    pos*: Vector2d
+    scale*: Vector2d
+    rot*: float
 
   # universe, top-level element
   Univ* = ref object of Elem
@@ -325,20 +325,47 @@ export sys
 ### DEMO ###
 type
   # input definitions for InputMgr
-  Input {.pure.} = enum none, left, right, action, restart, quit
+  Input {.pure.} = enum none, up, down, left, right, action, restart, quit
 
   # sample Comp
   TestComp = object of Comp
     things: int
+  
+  PlayerController = object of Comp
 
 # create a new TestComp instance
 proc newTestComp*(owner: Elem): TestComp =
   result = TestComp(things: 42)
-  result.initComp(owner)
+
+
+proc newPlayerController*(owner: Elem): PlayerController =
+  result = PlayerController()
+
+proc tick(player: ptr PlayerController, dt: float) =
+  let inputMgr = getComp[InputMgr[Input]](player.univ)
+  let owner = player.owner
+  let speed = 4.0
+  if inputMgr.getInput(Input.up) == InputState.down:
+    owner.pos.y -= speed
+  if inputMgr.getInput(Input.down) == InputState.down:
+    owner.pos.y += speed
+  if inputMgr.getInput(Input.left) == InputState.down:
+    owner.pos.x -= speed
+  if inputMgr.getInput(Input.right) == InputState.down:
+    owner.pos.x += speed
+
+proc playerController_tick*(univ: Univ, dt: float) =
+  for comp in mItems[PlayerController](univ):
+    comp.tick(dt)
+
+proc regPlayerController*(univ: Univ) =
+  on(getComp[TimestepMgr](univ).evTick, playerController_tick)
 
 # convert input scancodes into an Input
 proc toInput*(key: Scancode): Input =
   case key
+  of SDL_SCANCODE_UP: Input.up
+  of SDL_SCANCODE_DOWN: Input.down
   of SDL_SCANCODE_LEFT: Input.left
   of SDL_SCANCODE_RIGHT: Input.right
   of SDL_SCANCODE_ESCAPE: Input.quit
@@ -356,17 +383,17 @@ when isMainModule:
   register[InputMgr[Input]](app, newInputMgr[Input], regInputMgr[Input])
   register[Renderer](app, newRenderer, regRenderer)
   attach[Renderer](app).initialize()
-  register[TestComp](app, newTestComp)
-
-  register[VecTri](app, newVecTri, regVecTri)
 
   attach[InputMgr[Input]](app).initialize(toInput)
 
-  #attach[TestComp](world)
+  register[VecTri](app, newVecTri, regVecTri)
+  register[PlayerController](app, newPlayerController, regPlayerController)
+  register[TestComp](app, newTestComp)
 
-  attach[VecTri](app)
+  #attach[TestComp](world)
 
   var p1 = world.add("player1")
   attach[VecTri](p1)
+  attach[PlayerController](p1)
 
   getComp[TimestepMgr](app).initialize()
