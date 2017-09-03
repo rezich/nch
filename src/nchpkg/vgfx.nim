@@ -83,15 +83,6 @@ proc vecFont*(name: string): VecFont =
               vector2d(parseFloat(frontNums[0]), parseFloat(frontNums[1]))
             )
           )
-    if num == ord('o'):
-      echo $glyph.strokes[0].back
-      echo $glyph.strokes[0].front
-      
-      echo $glyph.strokes[1].front
-
-      echo $glyph.strokes[2].front
-
-      echo $glyph.strokes[3].front
     inc num
 
 proc `[]`(font: VecFont, c: char): VecGlyph =

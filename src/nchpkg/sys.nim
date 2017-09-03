@@ -109,7 +109,7 @@ template sdlFailIf(cond: typed, reason: string) =
     reason & ", SDL error: " & $getError())
 
 # initialize a given Renderer instance
-proc initialize*(renderer: var Renderer) =
+proc initialize*(renderer: var Renderer, width: int, height: int) =
   sdlFailIf(not sdl2.init(INIT_VIDEO or INIT_TIMER or INIT_EVENTS)):
     "SDL2 initialization failed"
   sdlFailIf(not setHint("SDL_RENDER_SCALE_QUALITY", "0")):
@@ -117,7 +117,7 @@ proc initialize*(renderer: var Renderer) =
 
   renderer.win = createWindow(title = renderer.internalUniv.name,
     x = SDL_WINDOWPOS_CENTERED, y = SDL_WINDOWPOS_CENTERED,
-    w = 640, h = 480, flags = SDL_WINDOW_SHOWN)
+    w = width.cint, h = height.cint, flags = SDL_WINDOW_SHOWN)
   sdlFailIf renderer.win.isNil: "Window could not be created"
 
   renderer.ren = renderer.win.createRenderer(index = -1,

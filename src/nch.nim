@@ -323,18 +323,9 @@ import nchpkg/sys, nchpkg/vgfx
 type
   # input definitions for InputMgr
   Input {.pure.} = enum none, up, down, left, right, action, restart, quit
-
-  # sample Comp
-  TestComp = object of Comp
-    things: int
   
   PlayerController = object of Comp
     font: VecFont
-
-# create a new TestComp instance
-proc newTestComp*(owner: Elem): TestComp =
-  result = TestComp(things: 42)
-
 
 proc newPlayerController*(owner: Elem): PlayerController =
   result = PlayerController(
@@ -388,20 +379,12 @@ when isMainModule:
 
   register[InputMgr[Input]](app, newInputMgr[Input], regInputMgr[Input])
   register[Renderer](app, newRenderer, regRenderer)
-  attach[Renderer](app).initialize()
-
+  attach[Renderer](app).initialize(320, 240)
   attach[InputMgr[Input]](app).initialize(toInput)
-
-  register[VecTri](app, newVecTri, regVecTri)
   register[PlayerController](app, newPlayerController, regPlayerController)
-  register[TestComp](app, newTestComp)
-
-  #attach[TestComp](world)
 
   var p1 = world.add("player1")
-  #attach[VecTri](p1)
   attach[PlayerController](p1)
-
   p1.pos = vector2d(100, 100)
 
   getComp[TimestepMgr](app).initialize()
