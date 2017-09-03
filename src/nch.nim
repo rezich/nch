@@ -329,6 +329,7 @@ type
     things: int
   
   PlayerController = object of Comp
+    font: VecFont
 
 # create a new TestComp instance
 proc newTestComp*(owner: Elem): TestComp =
@@ -336,7 +337,9 @@ proc newTestComp*(owner: Elem): TestComp =
 
 
 proc newPlayerController*(owner: Elem): PlayerController =
-  result = PlayerController()
+  result = PlayerController(
+    font: vecFont("sys")
+  )
 
 proc tick(player: ptr PlayerController, dt: float) =
   let inputMgr = getComp[InputMgr[Input]](player.univ)
@@ -351,12 +354,18 @@ proc tick(player: ptr PlayerController, dt: float) =
   if inputMgr.getInput(Input.right) == InputState.down:
     owner.pos.x += speed
 
+proc playerController_draw*(univ: Univ, ren: ptr Renderer) =
+  for comp in mItems[PlayerController](univ):
+    ren.drawChar(comp.owner.pos, '@', comp.font)
+  discard
+
 proc playerController_tick*(univ: Univ, dt: float) =
   for comp in mItems[PlayerController](univ):
     comp.tick(dt)
 
 proc regPlayerController*(univ: Univ) =
   on(getComp[TimestepMgr](univ).evTick, playerController_tick)
+  on(getComp[Renderer](univ).evDraw, playerController_draw)
 
 # convert input scancodes into an Input
 proc toInput*(key: Scancode): Input =
@@ -390,9 +399,9 @@ when isMainModule:
   #attach[TestComp](world)
 
   var p1 = world.add("player1")
-  attach[VecTri](p1)
+  #attach[VecTri](p1)
   attach[PlayerController](p1)
 
-  discard vecFont("sys")
+  p1.pos = vector2d(100, 100)
 
   getComp[TimestepMgr](app).initialize()

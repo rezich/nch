@@ -52,18 +52,18 @@ proc vecGlyph(): VecGlyph =
 
 type VecFont* = ref object of RootObj
   name: string
-  glyphs: OrderedTableRef[char, VecGlyph]
+  glyphs: array[0..256, VecGlyph]
 
 proc vecFont*(name: string): VecFont =
   result = VecFont(
-    name: name,
-    glyphs: newOrderedTable[char, VecGlyph]()
+    name: name
   )
 
   var i = open(name & ".vfont")
-  var num = 0
+  var num = 1
   for line in i.lines:
-    var glyph = vecGlyph()
+    var glyph = addr(result.glyphs[num])
+    glyph[] = vecGlyph()
     if line != "":
       for stroke in line.split({' '}):
         var points = stroke.split({';'})
@@ -83,13 +83,36 @@ proc vecFont*(name: string): VecFont =
               vector2d(parseFloat(frontNums[0]), parseFloat(frontNums[1]))
             )
           )
-      inc num
-    result.glyphs[chr(num)] = glyph
-type VecChar = object of RootObj
-  character: char
-  color: Color
-  pos: Vector2d
+    if num == ord('o'):
+      echo $glyph.strokes[0].back
+      echo $glyph.strokes[0].front
+      
+      echo $glyph.strokes[1].front
 
+      echo $glyph.strokes[2].front
+
+      echo $glyph.strokes[3].front
+    inc num
+
+proc `[]`(font: VecFont, c: char): VecGlyph =
+  font.glyphs[ord(c)]
+
+proc drawChar*(renderer: ptr Renderer, pos: Vector2d, c: char, font: VecFont) =
+  #TODO: change this all once world-to-screen coord conversion is implemented
+  renderer.ren.setDrawColor(0, 255, 0, 255)
+  let glyph = font[c]
+  var lastPoint = Vector2d()
+  let scale = 10.0
+  for stroke in glyph.strokes:
+    var frontPoint = pos + vector2d(stroke.front.x * scale, -stroke.front.y * scale)
+    var backPoint: Vector2d
+    if stroke.continueFromPrevious:
+      backPoint = pos + vector2d(lastPoint.x * scale, lastPoint.y * scale)
+    else:
+      backPoint = pos + vector2d(stroke.back.x * scale, -stroke.back.y * scale)
+    renderer.ren.drawLine(backPoint.x.cint, backPoint.y.cint, frontPoint.x.cint, frontPoint.y.cint)
+    lastPoint.x = stroke.front.x
+    lastPoint.y = -stroke.front.y
 
 
 
