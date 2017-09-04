@@ -67,6 +67,7 @@ type
     pos*: Vector2d
     scale*: Vector2d
     rot*: float
+    parent: Elem
     prev: Elem
     next: Elem
     last: Elem
@@ -128,11 +129,11 @@ proc initElem[T: Elem](elem: var T, parent: Elem = nil) =
     elem.internalUniv = parent.univ
   elem.internalDestroying = false
   elem.elems = newOrderedTable[string, Elem]()
-  elem.elems[".."] = parent
   elem.comps = newOrderedTable[string, CompRef]()
   elem.pos = vector2d(0.0, 0.0)
   elem.scale = vector2d(1.0, 1.0)
   elem.rot = 0.0
+  elem.parent = parent
   elem.prev = nil
   elem.next = nil
   elem.last = nil
@@ -292,20 +293,23 @@ proc destroy*[T: Univ](node: var T) =
 
 # destroy a given Elem
 proc destroy*[T: Elem](elem: T) =
+  #TODO: make sure all of this works!!
   elem.internalDestroying = true
   elem.univ.destroyingElems.add(elem)
   if elem.prev != nil:
     if elem.next == nil: # this is the last elem in the sequence
       elem.prev.next = nil
-      elem.elems[".."].elems[elem.name].last = elem.prev
+      elem.parent.elems[elem.name].last = elem.prev
     else:
       elem.prev.next = elem.next
       elem.next.prev = elem.prev
   else:
     if elem.next != nil: # this is the first elem in the seq
       elem.next.last = elem.last
-      elem.elems[".."].elems[elem.name] = elem.next
+      elem.parent.elems[elem.name] = elem.next
       elem.next.prev = nil
+  for child in elem.elems.mvalues:
+    child.destroy()
 
 # "finish off" a given Elem. do this e.g. at the end of a frame
 proc bury*[T: Elem](elem: var T) =
@@ -366,7 +370,6 @@ type
   
   PlayerController = object of Comp
     font: VecFont
-    str: string
 
 proc newPlayerController*(owner: Elem): PlayerController =
   result = PlayerController(
@@ -389,13 +392,13 @@ proc tick(player: ptr PlayerController, dt: float) =
     owner.destroy()
 
 proc playerController_draw*(univ: Univ, ren: ptr Renderer) =
-  for comp in mItems[PlayerController](univ):
+  for comp in mitems[PlayerController](univ):
     #ren.drawChar(comp.owner.pos, '@', comp.font, vector2d(200, 200))
     ren.drawString(comp.owner.pos, "NCH", comp.font, vector2d(80, 80), vector2d(10, 10), TextAlign.center)
   discard
 
 proc playerController_tick*(univ: Univ, dt: float) =
-  for comp in mItems[PlayerController](univ):
+  for comp in mitems[PlayerController](univ):
     comp.tick(dt)
 
 proc regPlayerController*(univ: Univ) =
@@ -428,12 +431,18 @@ when isMainModule:
   attach[InputMgr[Input]](app).initialize(toInput)
   register[PlayerController](app, newPlayerController, regPlayerController)
 
-  var p1 = world.add("player1")
+  register[VecText](app, newVecText, regVecText)
+
+  var p1 = world.add("player")
   attach[PlayerController](p1)
   p1.pos = vector2d(0, 0)
 
-  var p2 = world.add("player1")
-  attach[PlayerController](p2)
-  p2.pos = vector2d(50, 50)
+  var p2 = world.add("player")
+  attach[VecText](p2)
+  p2.pos = vector2d(25, 25)
+
+  var p3 = p1.add("player")
+  attach[VecText](p3)
+  p3.pos = vector2d(-25, -25)
 
   getComp[TimestepMgr](app).initialize()

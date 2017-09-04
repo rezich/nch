@@ -119,6 +119,24 @@ proc drawString*(renderer: ptr Renderer, pos: Vector2d, str: string, font: VecFo
     pos = pos + vector2d(1, 0) * (scale + spacing)
     i += 1
 
+type VecText* = object of Comp
+  font: VecFont #TODO: load this separately somewhere!
+  text: string
+
+proc newVecText*(owner: Elem): VecText =
+  result = VecText(
+    font: vecFont("sys"), #TODO: load this separately!
+    text: "VecString"
+  )
+
+proc vecText_draw*(univ: Univ, ren: ptr Renderer) =
+  for comp in mitems[VecText](univ):
+    ren.drawString(comp.owner.pos, comp.text, comp.font, vector2d(20, 20), vector2d(5, 5), TextAlign.center)
+
+proc regVecText*(univ: Univ) =
+  on(getComp[Renderer](univ).evDraw, vecText_draw)
+
+
 proc drawPoly*(renderer: ptr Renderer, points: var openArray[Point]) =
   renderer.ren.setDrawColor(0, 192, 0, 255)
   renderer.ren.drawLines(addr points[0], points.len.cint)
