@@ -349,8 +349,8 @@ proc tick(player: ptr PlayerController, dt: float) =
 
 proc playerController_draw*(univ: Univ, ren: ptr Renderer) =
   for comp in mItems[PlayerController](univ):
-    #ren.drawChar(comp.owner.pos, 'A', comp.font, vector2d(10, 10))
-    ren.drawString(comp.owner.pos, "NCH", comp.font, vector2d(10, 10), vector2d(20, 10))
+    #ren.drawChar(comp.owner.pos, '@', comp.font, vector2d(200, 200))
+    ren.drawString(comp.owner.pos, "NCH", comp.font, vector2d(80, 80), vector2d(10, 10), TextAlign.center)
   discard
 
 proc playerController_tick*(univ: Univ, dt: float) =
@@ -388,6 +388,6 @@ when isMainModule:
 
   var p1 = world.add("player1")
   attach[PlayerController](p1)
-  p1.pos = vector2d(100, 100)
+  p1.pos = vector2d(0, 0)
 
   getComp[TimestepMgr](app).initialize()

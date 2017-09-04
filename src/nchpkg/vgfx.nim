@@ -88,12 +88,12 @@ proc drawChar*(renderer: ptr Renderer, pos: Vector2d, c: char, font: VecFont, sc
   let glyph = font[c]
   var lastPoint = Vector2d()
   for stroke in glyph.strokes:
-    var frontPoint = pos + vector2d(stroke.front.x, stroke.front.y) * scale
+    var frontPoint = pos + vector2d(stroke.front.x, stroke.front.y) * scale * 0.5
     var backPoint: Vector2d
     if stroke.continueFromPrevious:
-      backPoint = pos + vector2d(lastPoint.x, lastPoint.y) * scale
+      backPoint = pos + vector2d(lastPoint.x, lastPoint.y) * scale * 0.5
     else:
-      backPoint = pos + vector2d(stroke.back.x, stroke.back.y) * scale
+      backPoint = pos + vector2d(stroke.back.x, stroke.back.y) * scale * 0.5
     
     var p1 = renderer.worldToScreen(backPoint)
     var p2 = renderer.worldToScreen(frontPoint)
@@ -101,16 +101,17 @@ proc drawChar*(renderer: ptr Renderer, pos: Vector2d, c: char, font: VecFont, sc
     lastPoint.x = stroke.front.x
     lastPoint.y = stroke.front.y
 
-proc drawString*(renderer: ptr Renderer, pos: Vector2d, str: string, font: VecFont, scale: Vector2d, spacing: Vector2d) =
+type TextAlign* {.pure.} = enum left, center, right
+
+proc drawString*(renderer: ptr Renderer, pos: Vector2d, str: string, font: VecFont, scale: Vector2d, spacing: Vector2d, textAlign: TextAlign) =
   var i = 0
   var pos = pos
+  if textAlign == TextAlign.center:
+    pos -= vector2d((str.len.float - 1) * (scale.x + spacing.x) * 0.5, 0)
   while i < str.len:
     renderer.drawChar(pos, str[i], font, scale)
-    pos = pos + vector2d(1, 0) * scale + vector2d(1, 0) * spacing
+    pos = pos + vector2d(1, 0) * (scale + spacing)
     i += 1
-
-
-
 
 
 proc drawPoly*(renderer: ptr Renderer, points: var openArray[Point]) =
