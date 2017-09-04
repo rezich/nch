@@ -131,11 +131,13 @@ proc newVecText*(owner: Elem): VecText =
 
 proc vecText_draw*(univ: Univ, ren: ptr Renderer) =
   for comp in mitems[VecText](univ):
-    ren.drawString(comp.owner.pos, comp.text, comp.font, vector2d(20, 20), vector2d(5, 5), TextAlign.center)
+    ren.drawString(comp.owner.pos, comp.text, comp.font, vector2d(4, 12), vector2d(5, 5), TextAlign.center)
 
 proc regVecText*(univ: Univ) =
   on(getComp[Renderer](univ).evDraw, vecText_draw)
 
+proc initialize*(vt: var VecText, text: string) =
+  vt.text = text
 
 proc drawPoly*(renderer: ptr Renderer, points: var openArray[Point]) =
   renderer.ren.setDrawColor(0, 192, 0, 255)
