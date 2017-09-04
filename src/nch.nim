@@ -19,9 +19,6 @@ import
 const
   compsPerPage = 2 #TODO: make per-Comp setting. this might require a lot of work
 
-proc box*[T](x: T): ref T =
-  new(result); result[] = x
-
 type
   # memory manager container
   Page*[T; N: static[int]] = object of RootObj
@@ -70,6 +67,9 @@ type
     pos*: Vector2d
     scale*: Vector2d
     rot*: float
+    prev: Elem
+    next: Elem
+    last: Elem
 
   # universe, top-level element
   Univ* = ref object of Elem
@@ -133,6 +133,9 @@ proc initElem[T: Elem](elem: var T, parent: Elem = nil) =
   elem.pos = vector2d(0.0, 0.0)
   elem.scale = vector2d(1.0, 1.0)
   elem.rot = 0.0
+  elem.prev = nil
+  elem.next = nil
+  elem.last = nil
 
 # initialize a Univ
 proc initUniv*(univ: var Univ, name: string) =
@@ -152,11 +155,19 @@ proc add*[T: Elem](parent: var T, name: string): Elem {.discardable.} =
   new(result)
   result.name = name
   initElem(result, cast[Elem](parent))
-  parent.elems[name] = result
+  if name in parent.elems:
+    if parent.elems[name].last == nil:
+      result.prev = parent.elems[name]
+      parent.elems[name].next = result
+    else:
+      result.prev = parent.elems[name].last
+      parent.elems[name].last.next = result
+    parent.elems[name].last = result
+  else:
+    parent.elems[name] = result
 
 # initialize a Comp
 proc initComp*[T: Comp](comp: var T, owner: Elem) =
-  #echo owner.name
   comp.name = typedesc[T].name
   comp.active = true
   comp.owner = owner
@@ -172,7 +183,7 @@ proc newPage[T: Comp](): Page[T, compsPerPage] =
     i.active = false
 
 # create an additional Page for the memory manager
-proc newPage[T: Comp](prev: ptr Page[T, compsPerPage]): ptr Page[T, compsPerPage] {.discardable.} =
+proc newPage[T: Comp](prev: ptr Page[T, compsPerPage], compsPerPage: static[int]): ptr Page[T, compsPerPage] {.discardable.} =
   result = cast[ptr Page[T, compsPerPage]](alloc(sizeof(Page[T, compsPerPage])))
   result.next = nil
   prev.next = result
@@ -188,7 +199,6 @@ proc newCompAlloc[T: Comp](newProc: proc (owner: Elem): T) : CompAlloc[T] =
     vacancies: @[],
     size: sizeof(T)
   )
-  echo result.size
 
 # register a Comp sub-type into a given Univ
 proc register*[T](univ: Univ, newProc: proc (owner: Elem): T, regProc: proc (univ: Univ) = nil) =
@@ -220,7 +230,7 @@ proc allocComp[T: Comp](univ: Univ, owner: Elem): (ptr T, int) =
   while index >= compsPerPage: # skip ahead to the necessary Page, given the index
     index = index - compsPerPage
     if curPage.next == nil:
-      newPage[T](curPage)
+      newPage[T](curPage, compsPerPage)
     curPage = curPage.next
   curPage.contents[index] = compAlloc.newProc(owner)
   result = (cast[ptr T](addr(curPage.contents[index])), realIndex)
@@ -284,6 +294,18 @@ proc destroy*[T: Univ](node: var T) =
 proc destroy*[T: Elem](elem: T) =
   elem.internalDestroying = true
   elem.univ.destroyingElems.add(elem)
+  if elem.prev != nil:
+    if elem.next == nil: # this is the last elem in the sequence
+      elem.prev.next = nil
+      elem.elems[".."].elems[elem.name].last = elem.prev
+    else:
+      elem.prev.next = elem.next
+      elem.next.prev = elem.prev
+  else:
+    if elem.next != nil: # this is the first elem in the seq
+      elem.next.last = elem.last
+      elem.elems[".."].elems[elem.name] = elem.next
+      elem.next.prev = nil
 
 # "finish off" a given Elem. do this e.g. at the end of a frame
 proc bury*[T: Elem](elem: var T) =
@@ -306,6 +328,13 @@ proc cleanup*(univ: Univ) =
   for elem in univ.destroyingElems.mitems:
     bury(elem)
   univ.destroyingElems = @[]
+
+iterator mitems*(elem: var Elem): Elem =
+  var e = elem
+  yield e
+  while e.next != nil:
+    yield e.next
+    e = e.next
 
 # iterate through all active instances of a given Comp sub-type in a given Univ
 iterator mitems*[T: Comp](univ: Univ): ptr T =
@@ -402,5 +431,9 @@ when isMainModule:
   var p1 = world.add("player1")
   attach[PlayerController](p1)
   p1.pos = vector2d(0, 0)
+
+  var p2 = world.add("player1")
+  attach[PlayerController](p2)
+  p2.pos = vector2d(50, 50)
 
   getComp[TimestepMgr](app).initialize()
