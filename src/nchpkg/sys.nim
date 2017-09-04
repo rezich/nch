@@ -142,7 +142,7 @@ proc initialize*(renderer: var Renderer, width: int, height: int) =
 
 # render things to the screen
 proc tick(renderer: ptr Renderer, dt: float) =
-  renderer.ren.setDrawColor(0, 64, 0, 255)
+  renderer.ren.setDrawColor(0, 0, 0, 255)
   renderer.ren.clear()
 
   for ev in renderer.evDraw:

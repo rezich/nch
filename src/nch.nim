@@ -438,11 +438,11 @@ when isMainModule:
   p1.pos = vector2d(0, 0)
 
   var p2 = world.add("player")
-  attach[VecText](p2).initialize("experimental interactive")
-  p2.pos = vector2d(-25, 55)
+  attach[VecText](p2).initialize("experimental interactive", TextAlign.center, vector2d(9, 12), vector2d(2, 5))
+  p2.pos = vector2d(0, 55)
 
   var p3 = p1.add("player")
-  attach[VecText](p3).initialize("multimedia framework")
-  p3.pos = vector2d(25, -55)
+  attach[VecText](p3).initialize("multimedia framework", TextAlign.center, vector2d(9, 12), vector2d(4, 5))
+  p3.pos = vector2d(0, -55)
 
   getComp[TimestepMgr](app).initialize()

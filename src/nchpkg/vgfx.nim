@@ -88,7 +88,7 @@ proc drawLine*(renderer: ptr Renderer, back, front: Vector2d) =
   renderer.ren.drawLine(p1.x, p1.y, p2.x, p2.y)
 
 proc drawChar*(renderer: ptr Renderer, pos: Vector2d, c: char, font: VecFont, scale: Vector2d) =
-  renderer.ren.setDrawColor(0, 255, 0, 255)
+  renderer.ren.setDrawColor(255, 255, 255, 255)
   let glyph = font[c]
   var lastPoint = Vector2d()
   for stroke in glyph.strokes:
@@ -113,7 +113,8 @@ proc drawString*(renderer: ptr Renderer, pos: Vector2d, str: string, font: VecFo
     pos += vector2d(scale.x * 0.5, 0)
   of TextAlign.center:
     pos -= vector2d((str.len.float - 1) * (scale.x + spacing.x) * 0.5, 0)
-  of TextAlign.right: discard
+  of TextAlign.right:
+    pos -= vector2d((str.len.float - 1) * (scale.x + spacing.x), 0) + vector2d(scale.x * 0.5, 0)
   while i < str.len:
     renderer.drawChar(pos, str[i], font, scale)
     pos = pos + vector2d(1, 0) * (scale + spacing)
@@ -122,22 +123,31 @@ proc drawString*(renderer: ptr Renderer, pos: Vector2d, str: string, font: VecFo
 type VecText* = object of Comp
   font: VecFont #TODO: load this separately somewhere!
   text: string
+  textAlign: TextAlign
+  scale: Vector2d
+  spacing: Vector2d
 
 proc newVecText*(owner: Elem): VecText =
   result = VecText(
     font: vecFont("sys"), #TODO: load this separately!
-    text: "VecString"
+    text: "VecString",
+    textAlign: TextAlign.center,
+    scale: vector2d(1, 1),
+    spacing: vector2d(0, 0)
   )
 
 proc vecText_draw*(univ: Univ, ren: ptr Renderer) =
   for comp in mitems[VecText](univ):
-    ren.drawString(comp.owner.pos, comp.text, comp.font, vector2d(4, 12), vector2d(5, 5), TextAlign.center)
+    ren.drawString(comp.owner.pos, comp.text, comp.font, comp.scale, comp.spacing, comp.textAlign)
 
 proc regVecText*(univ: Univ) =
   on(getComp[Renderer](univ).evDraw, vecText_draw)
 
-proc initialize*(vt: var VecText, text: string) =
+proc initialize*(vt: var VecText, text: string, textAlign: TextAlign, scale: Vector2d, spacing: Vector2d) =
   vt.text = text
+  vt.textAlign = textAlign
+  vt.scale = scale
+  vt.spacing = spacing
 
 proc drawPoly*(renderer: ptr Renderer, points: var openArray[Point]) =
   renderer.ren.setDrawColor(0, 192, 0, 255)
