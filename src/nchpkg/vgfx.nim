@@ -17,12 +17,6 @@ import
   strutils
 
 
-proc point*(x: int, y: int): Point =
-  (x.cint, y.cint)
-
-converter toPoint*(v: Vector2d): Point = result = point(v.x, v.y)
-
-
 type VecStroke = object of RootObj
   back: Vector2d
   front: Vector2d
@@ -88,22 +82,32 @@ proc vecFont*(name: string): VecFont =
 proc `[]`(font: VecFont, c: char): VecGlyph =
   font.glyphs[ord(c)]
 
-proc drawChar*(renderer: ptr Renderer, pos: Vector2d, c: char, font: VecFont) =
+proc drawChar*(renderer: ptr Renderer, pos: Vector2d, c: char, font: VecFont, scale: Vector2d) =
   #TODO: change this all once world-to-screen coord conversion is implemented
   renderer.ren.setDrawColor(0, 255, 0, 255)
   let glyph = font[c]
   var lastPoint = Vector2d()
-  let scale = 10.0
   for stroke in glyph.strokes:
-    var frontPoint = pos + vector2d(stroke.front.x * scale, -stroke.front.y * scale)
+    var frontPoint = pos + vector2d(stroke.front.x, stroke.front.y) * scale
     var backPoint: Vector2d
     if stroke.continueFromPrevious:
-      backPoint = pos + vector2d(lastPoint.x * scale, lastPoint.y * scale)
+      backPoint = pos + vector2d(lastPoint.x, lastPoint.y) * scale
     else:
-      backPoint = pos + vector2d(stroke.back.x * scale, -stroke.back.y * scale)
-    renderer.ren.drawLine(backPoint.x.cint, backPoint.y.cint, frontPoint.x.cint, frontPoint.y.cint)
+      backPoint = pos + vector2d(stroke.back.x, stroke.back.y) * scale
+    
+    var p1 = renderer.worldToScreen(backPoint)
+    var p2 = renderer.worldToScreen(frontPoint)
+    renderer.ren.drawLine(p1.x, p1.y, p2.x, p2.y)
     lastPoint.x = stroke.front.x
-    lastPoint.y = -stroke.front.y
+    lastPoint.y = stroke.front.y
+
+proc drawString*(renderer: ptr Renderer, pos: Vector2d, str: string, font: VecFont, scale: Vector2d, spacing: Vector2d) =
+  var i = 0
+  var pos = pos
+  while i < str.len:
+    renderer.drawChar(pos, str[i], font, scale)
+    pos = pos + vector2d(1, 0) * scale + vector2d(1, 0) * spacing
+    i += 1
 
 
 

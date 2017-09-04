@@ -93,9 +93,20 @@ type
     ren*: RendererPtr
     win: WindowPtr
     evDraw*: nch.Event[proc (univ: Univ, ren: ptr Renderer)]
+    width: int
+    height: int
+    center: Point
   
   # exception sub-type for SDL things
   SDLException = object of Exception
+
+proc point*(x: int, y: int): Point =
+  (x.cint, y.cint)
+
+converter toPoint*(v: Vector2d): Point = result = point(v.x, v.y)
+
+proc worldToScreen*(renderer: ptr Renderer, v: Vector2d): Point =
+  point(renderer.center.x.float + v.x, renderer.center.y.float - v.y)
 
 # create a new Renderer instance
 proc newRenderer*(owner: Elem): Renderer =
@@ -120,6 +131,10 @@ proc initialize*(renderer: var Renderer, width: int, height: int) =
     w = width.cint, h = height.cint, flags = SDL_WINDOW_SHOWN)
   sdlFailIf renderer.win.isNil: "Window could not be created"
 
+  renderer.width = width
+  renderer.height = height
+  renderer.center = point(width / 2, height / 2)
+
   renderer.ren = renderer.win.createRenderer(index = -1,
     flags = Renderer_Accelerated or Renderer_PresentVsync)
   sdlFailIf renderer.ren.isNil: "Renderer could not be created"
@@ -128,13 +143,6 @@ proc initialize*(renderer: var Renderer, width: int, height: int) =
 proc tick(renderer: ptr Renderer, dt: float) =
   renderer.ren.setDrawColor(0, 64, 0, 255)
   renderer.ren.clear()
-
-  #[renderer.ren.setDrawColor(0, 192, 0, 255)
-  var points = newSeq[Point]()
-  points.add((0.cint, 0.cint))
-  points.add((100.cint, 100.cint))
-  renderer.ren.drawLines(addr points[0], points.len.cint)]#
-
 
   for ev in renderer.evDraw:
     let (p, _) = ev

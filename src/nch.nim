@@ -315,7 +315,8 @@ iterator items*[T: proc](event: Event[T]): (T, CompRef) =
   for i in event.after:
     yield i
 
-import nchpkg/sys, nchpkg/vgfx
+import nchpkg/sys
+import nchpkg/vgfx
 
 
 
@@ -326,6 +327,7 @@ type
   
   PlayerController = object of Comp
     font: VecFont
+    str: string
 
 proc newPlayerController*(owner: Elem): PlayerController =
   result = PlayerController(
@@ -337,9 +339,9 @@ proc tick(player: ptr PlayerController, dt: float) =
   let owner = player.owner
   let speed = 4.0
   if inputMgr.getInput(Input.up) == InputState.down:
-    owner.pos.y -= speed
-  if inputMgr.getInput(Input.down) == InputState.down:
     owner.pos.y += speed
+  if inputMgr.getInput(Input.down) == InputState.down:
+    owner.pos.y -= speed
   if inputMgr.getInput(Input.left) == InputState.down:
     owner.pos.x -= speed
   if inputMgr.getInput(Input.right) == InputState.down:
@@ -347,7 +349,8 @@ proc tick(player: ptr PlayerController, dt: float) =
 
 proc playerController_draw*(univ: Univ, ren: ptr Renderer) =
   for comp in mItems[PlayerController](univ):
-    ren.drawChar(comp.owner.pos, '@', comp.font)
+    #ren.drawChar(comp.owner.pos, 'A', comp.font, vector2d(10, 10))
+    ren.drawString(comp.owner.pos, "NCH", comp.font, vector2d(10, 10), vector2d(20, 10))
   discard
 
 proc playerController_tick*(univ: Univ, dt: float) =
