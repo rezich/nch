@@ -31,6 +31,7 @@ proc initialize*(mgr: var TimestepMgr) =
     for ev in mgr.evTick:
       let (p, _) = ev
       p(mgr.internalUniv, 0.0)
+    mgr.univ.cleanup()
 
 
 ### InputMgr - handles user input ###

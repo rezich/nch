@@ -17,16 +17,16 @@ import
 
 ### SYSTEM ###
 const
-  compsPerPage = 2
+  compsPerPage = 2 #TODO: make per-Comp setting. this might require a lot of work
 
 proc box*[T](x: T): ref T =
   new(result); result[] = x
 
 type
   # memory manager container
-  Page*[T] = object of RootObj
-    contents*: array[0..compsPerPage, T]
-    next: ptr Page[T]
+  Page*[T; N: static[int]] = object of RootObj
+    contents*: array[0..N, T]
+    next: ptr Page[T, N]
 
   #TODO
   Node* = object of RootObj
@@ -37,10 +37,11 @@ type
   #TODO
   CompAllocBase* = ref object of RootObj
     vacancies: seq[int]
+    size: int
 
   # Comp allocator, stored in a Univ
   CompAlloc*[T] = ref object of CompAllocBase
-    comps*: Page[T]
+    comps*: Page[T, compsPerPage]
     newProc: proc (owner: Elem): T
     last: int
   
@@ -54,6 +55,7 @@ type
     name: string
     index: int
     empty*: bool
+    compPtr: ptr Comp
   
   #TODO
   Event*[T: proc] = ref object of RootObj
@@ -72,6 +74,7 @@ type
   # universe, top-level element
   Univ* = ref object of Elem
     compAllocs*: OrderedTableRef[string, CompAllocBase]
+    destroyingElems: seq[Elem]
 
   # container for the entire engine
   Nch* = object of RootObj
@@ -100,9 +103,9 @@ proc after*[T](event: Event[T], procedure: T) =
 # create a new Event
 proc newEvent*[T](): Event[T] =
   Event[T](
-    before: newSeq[(T, CompRef)](),
-    on: newSeq[(T, CompRef)](),
-    after: newSeq[(T, CompRef)]()
+    before: @[],
+    on: @[],
+    after: @[]
   )
 
 # gets whether or not this Node is destroying
@@ -135,7 +138,8 @@ proc initElem[T: Elem](elem: var T, parent: Elem = nil) =
 proc initUniv*(univ: var Univ, name: string) =
   univ = Univ(
     name: name,
-    compAllocs: newOrderedTable[string, CompAllocBase]()
+    compAllocs: newOrderedTable[string, CompAllocBase](),
+    destroyingElems: @[]
   )
   initElem(univ)
   univ.internalUniv = nil
@@ -160,16 +164,16 @@ proc initComp*[T: Comp](comp: var T, owner: Elem) =
   comp.internalDestroying = false
 
 # create the first Page for the memory manager
-proc newPage[T: Comp](): Page[T] =
-  result = Page[T](
+proc newPage[T: Comp](): Page[T, compsPerPage] =
+  result = Page[T, compsPerPage](
     next: nil
   )
   for i in result.contents.mitems:
     i.active = false
 
 # create an additional Page for the memory manager
-proc newPage[T: Comp](prev: ptr Page[T]): ptr Page[T] {.discardable.} =
-  result = cast[ptr Page[T]](alloc(sizeof(Page[T])))
+proc newPage[T: Comp](prev: ptr Page[T, compsPerPage]): ptr Page[T, compsPerPage] {.discardable.} =
+  result = cast[ptr Page[T, compsPerPage]](alloc(sizeof(Page[T, compsPerPage])))
   result.next = nil
   prev.next = result
   for i in result.contents.mitems:
@@ -181,8 +185,10 @@ proc newCompAlloc[T: Comp](newProc: proc (owner: Elem): T) : CompAlloc[T] =
     comps: newPage[T](),
     last: 0,
     newProc: newProc,
-    vacancies: newSeq[int]()
+    vacancies: @[],
+    size: sizeof(T)
   )
+  echo result.size
 
 # register a Comp sub-type into a given Univ
 proc register*[T](univ: Univ, newProc: proc (owner: Elem): T, regProc: proc (univ: Univ) = nil) =
@@ -227,7 +233,8 @@ proc attach*[T: Comp](owner: Elem): ptr T {.discardable.} =
   result.initComp(owner)
   owner.comps[result.name] = CompRef(
     name: result.name,
-    index: index
+    index: index,
+    compPtr: result
   )
 
 # create a new instance of a Comp sub-type and attach it to a Univ
@@ -276,6 +283,7 @@ proc destroy*[T: Univ](node: var T) =
 # destroy a given Elem
 proc destroy*[T: Elem](elem: T) =
   elem.internalDestroying = true
+  elem.univ.destroyingElems.add(elem)
 
 # "finish off" a given Elem. do this e.g. at the end of a frame
 proc bury*[T: Elem](elem: var T) =
@@ -283,8 +291,10 @@ proc bury*[T: Elem](elem: var T) =
     var key: string
     var val: CompRef
     (key, val) = i
-    
+    #TODO: bury Comps
     elem.univ.compAllocs[key].vacancies.add(val.index) # add a vacancy to the memory manager
+    val.compPtr.owner = nil
+    val.compPtr.active = false
   elem = nil
 
 # destroy a given instance of a Comp sub-type
@@ -292,10 +302,10 @@ proc destroy*[T: Comp](comp: ptr T) =
   comp.active = false
   comp.internalDestroying = true
 
-# "finish off" a given instance of a Comp sub-type. do this e.g. at the end of a frame
-proc bury[T: Comp](comp: var ptr T) =
-  #TODO: onDestroy?
-  discard
+proc cleanup*(univ: Univ) =
+  for elem in univ.destroyingElems.mitems:
+    bury(elem)
+  univ.destroyingElems = @[]
 
 # iterate through all active instances of a given Comp sub-type in a given Univ
 iterator mitems*[T: Comp](univ: Univ): ptr T =
@@ -346,6 +356,8 @@ proc tick(player: ptr PlayerController, dt: float) =
     owner.pos.x -= speed
   if inputMgr.getInput(Input.right) == InputState.down:
     owner.pos.x += speed
+  if inputMgr.getInput(Input.action) == InputState.pressed:
+    owner.destroy()
 
 proc playerController_draw*(univ: Univ, ren: ptr Renderer) =
   for comp in mItems[PlayerController](univ):
@@ -369,6 +381,7 @@ proc toInput*(key: Scancode): Input =
   of SDL_SCANCODE_LEFT: Input.left
   of SDL_SCANCODE_RIGHT: Input.right
   of SDL_SCANCODE_ESCAPE: Input.quit
+  of SDL_SCANCODE_RETURN: Input.action
   else: Input.none
 
 # tests

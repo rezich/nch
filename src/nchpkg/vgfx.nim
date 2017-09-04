@@ -41,7 +41,7 @@ type VecGlyph = ref object of RootObj
 
 proc vecGlyph(): VecGlyph =
   VecGlyph(
-    strokes: newSeq[VecStroke]()
+    strokes: @[]
   )
 
 type VecFont* = ref object of RootObj
@@ -82,8 +82,12 @@ proc vecFont*(name: string): VecFont =
 proc `[]`(font: VecFont, c: char): VecGlyph =
   font.glyphs[ord(c)]
 
+proc drawLine*(renderer: ptr Renderer, back, front: Vector2d) =
+  var p1 = renderer.worldToScreen(back)
+  var p2 = renderer.worldToScreen(front)
+  renderer.ren.drawLine(p1.x, p1.y, p2.x, p2.y)
+
 proc drawChar*(renderer: ptr Renderer, pos: Vector2d, c: char, font: VecFont, scale: Vector2d) =
-  #TODO: change this all once world-to-screen coord conversion is implemented
   renderer.ren.setDrawColor(0, 255, 0, 255)
   let glyph = font[c]
   var lastPoint = Vector2d()
@@ -95,9 +99,7 @@ proc drawChar*(renderer: ptr Renderer, pos: Vector2d, c: char, font: VecFont, sc
     else:
       backPoint = pos + vector2d(stroke.back.x, stroke.back.y) * scale * 0.5
     
-    var p1 = renderer.worldToScreen(backPoint)
-    var p2 = renderer.worldToScreen(frontPoint)
-    renderer.ren.drawLine(p1.x, p1.y, p2.x, p2.y)
+    renderer.drawLine(backPoint, frontPoint)
     lastPoint.x = stroke.front.x
     lastPoint.y = stroke.front.y
 
@@ -106,35 +108,17 @@ type TextAlign* {.pure.} = enum left, center, right
 proc drawString*(renderer: ptr Renderer, pos: Vector2d, str: string, font: VecFont, scale: Vector2d, spacing: Vector2d, textAlign: TextAlign) =
   var i = 0
   var pos = pos
-  if textAlign == TextAlign.center:
+  case textAlign
+  of TextAlign.left:
+    pos += vector2d(scale.x * 0.5, 0)
+  of TextAlign.center:
     pos -= vector2d((str.len.float - 1) * (scale.x + spacing.x) * 0.5, 0)
+  of TextAlign.right: discard
   while i < str.len:
     renderer.drawChar(pos, str[i], font, scale)
     pos = pos + vector2d(1, 0) * (scale + spacing)
     i += 1
 
-
 proc drawPoly*(renderer: ptr Renderer, points: var openArray[Point]) =
   renderer.ren.setDrawColor(0, 192, 0, 255)
   renderer.ren.drawLines(addr points[0], points.len.cint)
-
-
-### VecTri
-type
-  VecTri* = object of Comp
-
-proc newVecTri*(owner: Elem): VecTri =
-  result = VecTri()
-
-proc vecTri_draw(univ: Univ, ren: ptr Renderer) =
-  for comp in mItems[VecTri](univ):
-    let owner = comp.owner
-    var points = newSeq[Point]()
-    points.add(point(owner.pos.x + 0, owner.pos.y + 0))
-    points.add(point(owner.pos.x + 100, owner.pos.y + 100))
-    points.add(point(owner.pos.x + 100, owner.pos.y + 0))
-    points.add(point(owner.pos.x + 0, owner.pos.y + 0))
-    ren.drawPoly(points)
-
-proc regVecTri*(univ: Univ) =
-  on(getComp[Renderer](univ).evDraw, vecTri_draw)
