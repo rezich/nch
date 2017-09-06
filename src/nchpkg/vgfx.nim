@@ -88,6 +88,10 @@ proc drawLine*(renderer: ptr Renderer, back, front: Vector2d) =
   var p2 = renderer.worldToScreen(front)
   renderer.ren.drawLine(p1.x, p1.y, p2.x, p2.y)
 
+proc drawCircle*(renderer: ptr Renderer, pos: Vector2d, radius: float, color: Color) =
+  var pos = renderer.worldToScreen(pos)
+  renderer.ren.circleRGBA(pos.x.int16, pos.y.int16, radius.int16, color.r.uint8, color.g.uint8, color.b.uint8, color.a.uint8)
+
 proc drawChar*(renderer: ptr Renderer, pos: Vector2d, c: char, font: VecFont, scale: Vector2d, slant: float = 0) =
   renderer.ren.setDrawColor(255, 255, 255, 255)
   let glyph = font[c]
@@ -99,7 +103,7 @@ proc drawChar*(renderer: ptr Renderer, pos: Vector2d, c: char, font: VecFont, sc
       backPoint = pos + vector2d(lastPoint.x + lastPoint.y * slant, lastPoint.y) * scale * 0.5
     else:
       backPoint = pos + vector2d(stroke.back.x + stroke.back.y * slant, stroke.back.y) * scale * 0.5
-    
+
     renderer.drawLine(backPoint, frontPoint)
     lastPoint.x = stroke.front.x
     lastPoint.y = stroke.front.y

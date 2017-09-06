@@ -37,9 +37,7 @@ proc initialize*(cc: ptr CircleCollider, radius: float) =
   cc.radius = radius
 
 proc testCollision(a, b: ptr CircleCollider) =
-  
-  if dist(a.owner.globalPos, b.owner.globalPos) <= max(a.radius, b.radius):
-    echo "testing"
+  if sqrDist(a.owner.globalPos, b.owner.globalPos) <= pow(a.radius + b.radius, 2):
     for ev in a.evCollision:
       let (p, _) = ev
       p(a, b)
@@ -47,6 +45,8 @@ proc testCollision(a, b: ptr CircleCollider) =
 
 ### CollisionRealm ###
 type CollisionRealm* = object of Comp
+
+#iterator mitems(realm: ptr CollisionRealm): ptr
 
 proc tick(realm: ptr CollisionRealm, dt: float) =
   for a in mitems[CircleCollider](realm.owner):
@@ -59,8 +59,14 @@ proc collisionRealm_tick(univ: Elem, dt: float) =
   for comp in mitems[CollisionRealm](univ):
     tick(comp, dt)
 
+proc collisionRealm_draw(univ: Elem, renderer: ptr Renderer) =
+  for realm in mitems[CollisionRealm](univ):
+    for circ in mitems[CircleCollider](realm.owner):
+      renderer.drawCircle(circ.owner.globalPos, circ.radius, color(255, 0, 0, 255))
+
 proc regCollisionRealm*(univ: Elem) =
   after(getComp[TimestepMgr](univ).evTick, collisionRealm_tick)
+  after(getComp[Renderer](univ).evDraw, collisionRealm_draw)
 
 proc newCollisionRealm*(owner: Elem): CollisionRealm =
   register[CircleCollider](owner, newCircleCollider)

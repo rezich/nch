@@ -89,9 +89,10 @@ proc getInput*[T: enum](mgr: var InputMgr[T], input: T): InputState =
 
 
 
-
 ### Renderer - SDL-based graphical renderer ###
 type
+  Camera* = object of Comp
+
   Renderer* = object of Comp
     ren*: RendererPtr
     win: WindowPtr
@@ -99,22 +100,21 @@ type
     width: int
     height: int
     center: Point
+    camera*: ptr Camera
+    camMatrix*: Matrix2d
   
   # exception sub-type for SDL things
   SDLException = object of Exception
 
-proc point*(x: int, y: int): Point =
-  (x.cint, y.cint)
-
-converter toPoint*(v: Vector2d): Point = result = point(v.x, v.y)
-
 proc worldToScreen*(renderer: ptr Renderer, v: Vector2d): Point =
-  point(renderer.center.x.float + v.x, renderer.center.y.float - v.y)
+  #var p = (v & renderer.camMatrix).toPoint2d() - renderer.camera.owner.pos
+  (v.toPoint2d() & renderer.camMatrix).toPoint()
 
 # create a new Renderer instance
 proc newRenderer*(owner: Elem): Renderer =
   result = Renderer(
-    evDraw: newEvent[proc (univ: Elem, ren: ptr Renderer)]()
+    evDraw: newEvent[proc (univ: Elem, ren: ptr Renderer)](),
+    camera: nil
   )
 
 # allow SDL to fail gracefully
@@ -142,10 +142,19 @@ proc initialize*(renderer: var Renderer, width: int, height: int) =
     flags = Renderer_Accelerated or Renderer_PresentVsync)
   sdlFailIf renderer.ren.isNil: "Renderer could not be created"
 
+proc getMatrix*(cam: ptr Camera, renderer: ptr Renderer): Matrix2d =
+  #cam.owner.getTransform
+  move(-cam.owner.globalPos) & rotate(cam.owner.rot) & stretch(cam.owner.scale.x, -cam.owner.scale.y) & move(renderer.center.x.float, renderer.center.y.float)
+
 # render things to the screen
 proc tick(renderer: ptr Renderer, dt: float) =
   renderer.ren.setDrawColor(0, 0, 0, 255)
   renderer.ren.clear()
+
+  if renderer.camera == nil:
+    return
+  
+  renderer.camMatrix = renderer.camera.getMatrix(renderer)
 
   for ev in renderer.evDraw:
     let (p, _) = ev
@@ -164,6 +173,17 @@ proc shutdown*(renderer: var Renderer) =
   renderer.ren.destroy()
   sdl2.quit()
 
+proc newCamera(owner: Elem): Camera =
+  result = Camera()
+  if getUp[Renderer](owner).camera == nil:
+    getUp[Renderer](owner).camera = addr(result)
+
+proc regCamera(univ: Elem) =
+  discard
+
+
 # register Renderer with a given Univ
 proc regRenderer*(univ: Elem) =
+  register[Camera](univ, newCamera, regCamera)
   after(getComp[TimestepMgr](univ).evTick, renderer_tick)
+

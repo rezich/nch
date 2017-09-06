@@ -17,6 +17,8 @@ import
 
 
 converter toPoint2d*(x: Vector2d): Point2d = point2d(x.x, x.y)
+converter toPoint*(x: Vector2d): Point = point(x.x.cint, x.y.cint)
+converter toPoint*(x: Point2d): Point = point(x.x.cint, x.y.cint)
 
 ### SYSTEM ###
 const
@@ -372,7 +374,7 @@ iterator mitems*[T: Comp](univ: Elem): ptr T =
   var curPage = addr cast[CompAlloc[T]](univ.compAllocs[typedesc[T].name]).comps
   while curPage != nil:
     for i in curPage.contents.mitems:
-      if i.active: # skip inactive Comps
+      if i.active and not i.owner.internalDestroying: # skip inactive Comps
         yield addr i
     curPage = curPage.next
 
@@ -429,7 +431,11 @@ proc tick(player: ptr PlayerController, dt: float) =
   let inputMgr = getComp[InputMgr[Input]](player.univ)
   let owner = player.owner
   let speed = 4.0
+  let cam = getUp[Renderer](player.owner).camera
+  cam.owner.rot = sin(getTicks().float / 800.0) * DEG15
+  #owner.rot = sin(getTicks().float / 800.0) * DEG15
   if inputMgr.getInput(Input.up) == InputState.down:
+    #owner.pos.y += speed
     owner.pos.y += speed
   if inputMgr.getInput(Input.down) == InputState.down:
     owner.pos.y -= speed
@@ -437,13 +443,14 @@ proc tick(player: ptr PlayerController, dt: float) =
     owner.pos.x -= speed
   if inputMgr.getInput(Input.right) == InputState.down:
     owner.pos.x += speed
-  if inputMgr.getInput(Input.action) == InputState.pressed:
-    owner.destroy()
+  if inputMgr.getInput(Input.action) == InputState.down:
+    cam.owner.scale += vector2d(0.01, 0.01)
+    #owner.destroy()
 
 proc playerController_draw*(univ: Elem, ren: ptr Renderer) =
   for comp in mitems[PlayerController](univ):
     #ren.drawChar(comp.owner.pos, '@', comp.font, vector2d(200, 200))
-    ren.drawString(comp.owner.pos, "NCH", comp.font, vector2d(72, 72), vector2d(15, 15), TextAlign.center, 0.75)
+    ren.drawString(comp.owner.pos, "NCH", comp.font, vector2d(72, 72), vector2d(15, 15), TextAlign.center, 0)
   discard
 
 proc playerController_tick*(univ: Elem, dt: float) =
@@ -476,7 +483,7 @@ when isMainModule:
 
   register[InputMgr[Input]](app, newInputMgr[Input], regInputMgr[Input])
   register[Renderer](app, newRenderer, regRenderer)
-  attach[Renderer](app).initialize(320, 240)
+  attach[Renderer](app).initialize(1024, 768)
   attach[InputMgr[Input]](app).initialize(toInput)
   register[PlayerController](app, newPlayerController, regPlayerController)
 
@@ -485,14 +492,18 @@ when isMainModule:
 
   attach[CollisionRealm](world)
 
+  var cam = app.add("mainCam")
+  attach[Camera](cam)
+  cam.pos = vector2d(0, 0)
+
   var p1 = world.add("player")
-  attach[CircleCollider](p1)
+  attach[CircleCollider](p1).initialize(32)
   attach[PlayerController](p1)
   p1.pos = vector2d(0, 0)
 
   var p2 = world.add("player")
   attach[VecText](p2).initialize("experimental interactive", TextAlign.right, vector2d(8, 7), vector2d(2.5, 5))
-  attach[CircleCollider](p2)
+  attach[CircleCollider](p2).initialize(64)
   p2.pos = vector2d(154, 46)
 
   var p3 = p1.add("player")
