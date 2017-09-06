@@ -22,7 +22,6 @@ type VecStroke = object of RootObj
   front: Vector2d
   continueFromPrevious: bool
 
-
 proc vecStroke(v: Vector2d): VecStroke =
   VecStroke(
     front: v,
@@ -87,17 +86,17 @@ proc drawLine*(renderer: ptr Renderer, back, front: Vector2d) =
   var p2 = renderer.worldToScreen(front)
   renderer.ren.drawLine(p1.x, p1.y, p2.x, p2.y)
 
-proc drawChar*(renderer: ptr Renderer, pos: Vector2d, c: char, font: VecFont, scale: Vector2d) =
+proc drawChar*(renderer: ptr Renderer, pos: Vector2d, c: char, font: VecFont, scale: Vector2d, slant: float = 0) =
   renderer.ren.setDrawColor(255, 255, 255, 255)
   let glyph = font[c]
   var lastPoint = Vector2d()
   for stroke in glyph.strokes:
-    var frontPoint = pos + vector2d(stroke.front.x, stroke.front.y) * scale * 0.5
+    var frontPoint = pos + vector2d(stroke.front.x + stroke.front.y * slant, stroke.front.y) * scale * 0.5
     var backPoint: Vector2d
     if stroke.continueFromPrevious:
-      backPoint = pos + vector2d(lastPoint.x, lastPoint.y) * scale * 0.5
+      backPoint = pos + vector2d(lastPoint.x + lastPoint.y * slant, lastPoint.y) * scale * 0.5
     else:
-      backPoint = pos + vector2d(stroke.back.x, stroke.back.y) * scale * 0.5
+      backPoint = pos + vector2d(stroke.back.x + stroke.back.y * slant, stroke.back.y) * scale * 0.5
     
     renderer.drawLine(backPoint, frontPoint)
     lastPoint.x = stroke.front.x
@@ -105,7 +104,7 @@ proc drawChar*(renderer: ptr Renderer, pos: Vector2d, c: char, font: VecFont, sc
 
 type TextAlign* {.pure.} = enum left, center, right
 
-proc drawString*(renderer: ptr Renderer, pos: Vector2d, str: string, font: VecFont, scale: Vector2d, spacing: Vector2d, textAlign: TextAlign) =
+proc drawString*(renderer: ptr Renderer, pos: Vector2d, str: string, font: VecFont, scale: Vector2d, spacing: Vector2d, textAlign: TextAlign, slant: float = 0) =
   var i = 0
   var pos = pos
   case textAlign
@@ -116,7 +115,7 @@ proc drawString*(renderer: ptr Renderer, pos: Vector2d, str: string, font: VecFo
   of TextAlign.right:
     pos -= vector2d((str.len.float - 1) * (scale.x + spacing.x), 0) + vector2d(scale.x * 0.5, 0)
   while i < str.len:
-    renderer.drawChar(pos, str[i], font, scale)
+    renderer.drawChar(pos, str[i], font, scale, slant)
     pos = pos + vector2d(1, 0) * (scale + spacing)
     i += 1
 
@@ -126,6 +125,7 @@ type VecText* = object of Comp
   textAlign: TextAlign
   scale: Vector2d
   spacing: Vector2d
+  slant: float
 
 proc newVecText*(owner: Elem): VecText =
   result = VecText(
@@ -133,21 +133,23 @@ proc newVecText*(owner: Elem): VecText =
     text: "VecString",
     textAlign: TextAlign.center,
     scale: vector2d(1, 1),
-    spacing: vector2d(0, 0)
+    spacing: vector2d(0, 0),
+    slant: 0.0
   )
 
 proc vecText_draw*(univ: Univ, ren: ptr Renderer) =
   for comp in mitems[VecText](univ):
-    ren.drawString(comp.owner.pos, comp.text, comp.font, comp.scale, comp.spacing, comp.textAlign)
+    ren.drawString(comp.owner.globalPos, comp.text, comp.font, comp.scale, comp.spacing, comp.textAlign, comp.slant)
 
 proc regVecText*(univ: Univ) =
   on(getComp[Renderer](univ).evDraw, vecText_draw)
 
-proc initialize*(vt: var VecText, text: string, textAlign: TextAlign, scale: Vector2d, spacing: Vector2d) =
+proc initialize*(vt: var VecText, text: string, textAlign: TextAlign, scale: Vector2d, spacing: Vector2d, slant: float = 0) =
   vt.text = text
   vt.textAlign = textAlign
   vt.scale = scale
   vt.spacing = spacing
+  vt.slant = slant
 
 proc drawPoly*(renderer: ptr Renderer, points: var openArray[Point]) =
   renderer.ren.setDrawColor(0, 192, 0, 255)

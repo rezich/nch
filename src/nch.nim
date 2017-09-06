@@ -67,7 +67,7 @@ type
     pos*: Vector2d
     scale*: Vector2d
     rot*: float
-    parent: Elem
+    parent*: Elem
     prev: Elem
     next: Elem
     last: Elem
@@ -88,6 +88,20 @@ proc nilCompRef*(): CompRef =
   CompRef(
     empty: true
   )
+
+proc getTransform*(elem: Elem): Matrix2d =
+  result = rotate(elem.rot) & stretch(elem.scale.x, elem.scale.y) & move(elem.pos)
+  var parent = elem.parent
+  while parent != nil:
+    result = parent.getTransform() & result
+    parent = parent.parent
+
+proc globalPos*(elem: Elem): Vector2d =
+  result = elem.pos
+  var parent = elem.parent
+  while parent != nil:
+    result = parent.pos + result
+    parent = parent.parent
 
 # subscribe a proc to an Event
 proc before*[T](event: Event[T], procedure: T) =
@@ -287,7 +301,7 @@ proc destroy*[T: Univ](node: var T) =
   node.internalDestroying = true
   #[
   if nch.root == addr node:
-    nch.root = nil
+    nch.root = nilcd;
     node = nil # ???
   ]#
 
@@ -394,7 +408,7 @@ proc tick(player: ptr PlayerController, dt: float) =
 proc playerController_draw*(univ: Univ, ren: ptr Renderer) =
   for comp in mitems[PlayerController](univ):
     #ren.drawChar(comp.owner.pos, '@', comp.font, vector2d(200, 200))
-    ren.drawString(comp.owner.pos, "NCH", comp.font, vector2d(80, 80), vector2d(10, 10), TextAlign.center)
+    ren.drawString(comp.owner.pos, "NCH", comp.font, vector2d(72, 72), vector2d(15, 15), TextAlign.center, 0.75)
   discard
 
 proc playerController_tick*(univ: Univ, dt: float) =
@@ -438,11 +452,11 @@ when isMainModule:
   p1.pos = vector2d(0, 0)
 
   var p2 = world.add("player")
-  attach[VecText](p2).initialize("experimental interactive", TextAlign.center, vector2d(9, 12), vector2d(2, 5))
-  p2.pos = vector2d(0, 55)
+  attach[VecText](p2).initialize("experimental interactive", TextAlign.right, vector2d(8, 7), vector2d(2.5, 5))
+  p2.pos = vector2d(154, 46)
 
   var p3 = p1.add("player")
-  attach[VecText](p3).initialize("multimedia framework", TextAlign.center, vector2d(9, 12), vector2d(4, 5))
-  p3.pos = vector2d(0, -55)
+  attach[VecText](p3).initialize("multimedia framework", TextAlign.left, vector2d(9, 7), vector2d(4, 5))
+  p3.pos = vector2d(-154, -46)
 
   getComp[TimestepMgr](app).initialize()
