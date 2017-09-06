@@ -21,16 +21,12 @@ import
 
 type CollisionRealm* = object of Comp
 
-proc newCollisionRealm*(owner: Elem): CollisionRealm =
-  CollisionRealm()
-
-proc collisionRealm_tick(univ: Univ, dt: float) =
+proc collisionRealm_tick(univ: Elem, dt: float) =
   for comp in mitems[CollisionRealm](univ):
     discard
 
-proc regCollisionRealm*(univ: Univ) =
+proc regCollisionRealm*(univ: Elem) =
   after(getComp[TimestepMgr](univ).evTick, collisionRealm_tick)
-
 
 type CircleCollider* = object of Comp
   radius: float
@@ -42,3 +38,7 @@ proc newCircleCollider*(owner: Elem): CircleCollider =
 proc initialize*(cc: ptr CircleCollider, radius: float) =
   cc.radius = radius
 
+
+proc newCollisionRealm*(owner: Elem): CollisionRealm =
+  register[CircleCollider](owner, newCircleCollider)
+  CollisionRealm()

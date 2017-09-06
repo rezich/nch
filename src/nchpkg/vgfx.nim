@@ -139,11 +139,11 @@ proc newVecText*(owner: Elem): VecText =
     slant: 0.0
   )
 
-proc vecText_draw*(univ: Univ, ren: ptr Renderer) =
+proc vecText_draw*(univ: Elem, ren: ptr Renderer) =
   for comp in mitems[VecText](univ):
     ren.drawString(comp.owner.globalPos, comp.text, comp.font, comp.scale, comp.spacing, comp.textAlign, comp.slant)
 
-proc regVecText*(univ: Univ) =
+proc regVecText*(univ: Elem) =
   on(getComp[Renderer](univ).evDraw, vecText_draw)
 
 proc initialize*(vt: var VecText, text: string, textAlign: TextAlign, scale: Vector2d, spacing: Vector2d, slant: float = 0) =

@@ -19,12 +19,12 @@ import
 type
   TimestepMgr* = object of Comp
     fpsman: FpsManager
-    evTick*: nch.Event[proc (univ: Univ, dt: float)]
+    evTick*: nch.Event[proc (univ: Elem, dt: float)]
 
 # create a new TimestepMgr instance
 proc newTimestepMgr*(owner: Elem): TimestepMgr =
   result = TimestepMgr(
-    evTick: newEvent[proc (univ: Univ, dt: float)]()
+    evTick: newEvent[proc (univ: Elem, dt: float)]()
   )
 
 # initialize a given TimestepMgr
@@ -63,7 +63,7 @@ proc tick*[T: enum](mgr: ptr InputMgr[T], dt: float) =
       discard
 
 # InputMgr tick event
-proc inputMgr_tick*[T: enum](univ: Univ, dt: float) =
+proc inputMgr_tick*[T: enum](univ: Elem, dt: float) =
   for comp in mitems[InputMgr[T]](univ):
     tick[T](comp, dt)
 
@@ -73,7 +73,7 @@ proc newInputMgr*[T: enum](owner: Elem): InputMgr[T] =
   result.initComp(owner)
 
 # register InputMgr with a given Univ
-proc regInputMgr*[T: enum](univ: Univ) =
+proc regInputMgr*[T: enum](univ: Elem) =
   before(getComp[TimestepMgr](univ).evTick, inputMgr_tick[T])
 
 # initialize a given InputMgr
@@ -95,7 +95,7 @@ type
   Renderer* = object of Comp
     ren*: RendererPtr
     win: WindowPtr
-    evDraw*: nch.Event[proc (univ: Univ, ren: ptr Renderer)]
+    evDraw*: nch.Event[proc (univ: Elem, ren: ptr Renderer)]
     width: int
     height: int
     center: Point
@@ -114,7 +114,7 @@ proc worldToScreen*(renderer: ptr Renderer, v: Vector2d): Point =
 # create a new Renderer instance
 proc newRenderer*(owner: Elem): Renderer =
   result = Renderer(
-    evDraw: newEvent[proc (univ: Univ, ren: ptr Renderer)]()
+    evDraw: newEvent[proc (univ: Elem, ren: ptr Renderer)]()
   )
 
 # allow SDL to fail gracefully
@@ -154,7 +154,7 @@ proc tick(renderer: ptr Renderer, dt: float) =
   renderer.ren.present()
 
 # Renderer tick event
-proc renderer_tick(univ: Univ, dt: float) =
+proc renderer_tick(univ: Elem, dt: float) =
   for comp in mItems[Renderer](univ):
     comp.tick(dt)
 
@@ -165,5 +165,5 @@ proc shutdown*(renderer: var Renderer) =
   sdl2.quit()
 
 # register Renderer with a given Univ
-proc regRenderer*(univ: Univ) =
+proc regRenderer*(univ: Elem) =
   after(getComp[TimestepMgr](univ).evTick, renderer_tick)

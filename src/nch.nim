@@ -28,7 +28,7 @@ type
   #TODO
   Node* = object of RootObj
     name*: string
-    internalUniv*: Univ
+    internalUniv*: Elem
     internalDestroying*: bool
   
   #TODO
@@ -71,15 +71,12 @@ type
     prev: Elem
     next: Elem
     last: Elem
-
-  # universe, top-level element
-  Univ* = ref object of Elem
     compAllocs*: OrderedTableRef[string, CompAllocBase]
     destroyingElems: seq[Elem]
-
+    
   # container for the entire engine
   Nch* = object of RootObj
-    root*: ptr Univ
+    root*: ptr Elem
 
 # singleton container for the entire engine
 var nch* = Nch(root: nil)
@@ -128,13 +125,13 @@ proc destroying*[T: Node](node: T): bool =
   node.internalDestroying
 
 # gets the Univ the given Elem is a part of
-proc univ*[T: Elem](elem: T): Univ =
+proc univ*[T: Elem](elem: T): Elem =
   if elem.internalUniv == nil:
-    return cast[Univ](elem)
+    return elem
   elem.internalUniv
 
 # gets the Univ the given Comp is a part of
-proc univ*[T: Comp](comp: T): Univ =
+proc univ*[T: Comp](comp: T): Elem =
   comp.internalUniv
 
 # initialize an Elem
@@ -151,13 +148,13 @@ proc initElem[T: Elem](elem: var T, parent: Elem = nil) =
   elem.prev = nil
   elem.next = nil
   elem.last = nil
+  elem.compAllocs = nil
+  elem.destroyingElems = nil
 
 # initialize a Univ
-proc initUniv*(univ: var Univ, name: string) =
-  univ = Univ(
-    name: name,
-    compAllocs: newOrderedTable[string, CompAllocBase](),
-    destroyingElems: @[]
+proc initUniv*(univ: var Elem, name: string) =
+  univ = Elem(
+    name: name
   )
   initElem(univ)
   univ.internalUniv = nil
@@ -216,8 +213,13 @@ proc newCompAlloc[T: Comp](newProc: proc (owner: Elem): T) : CompAlloc[T] =
   )
 
 # register a Comp sub-type into a given Univ
-proc register*[T](univ: Univ, newProc: proc (owner: Elem): T, regProc: proc (univ: Univ) = nil) =
+proc register*[T](univ: Elem, newProc: proc (owner: Elem): T, regProc: proc (univ: Elem) = nil) =
   let name = typedesc[T].name
+
+  if univ.compAllocs == nil:
+    univ.compAllocs = newOrderedTable[string, CompAllocBase]()
+    univ.destroyingElems = @[]
+
   if name in univ.compAllocs:
     echo "EXCEPTION: " & name & " already registered in this Univ"
     return
@@ -226,7 +228,7 @@ proc register*[T](univ: Univ, newProc: proc (owner: Elem): T, regProc: proc (uni
     regProc(univ)
 
 # allocate a new Comp inside a given Univ
-proc allocComp[T: Comp](univ: Univ, owner: Elem): (ptr T, int) =
+proc allocComp[T: Comp](univ: Elem, owner: Elem): (ptr T, int) =
   let name = typedesc[T].name
   if name notin univ.compAllocs:
     echo "EXCEPTION: Comp not registered w/ Univ"
@@ -249,22 +251,34 @@ proc allocComp[T: Comp](univ: Univ, owner: Elem): (ptr T, int) =
     curPage = curPage.next
   curPage.contents[index] = compAlloc.newProc(owner)
   result = (cast[ptr T](addr(curPage.contents[index])), realIndex)
+
+proc getUpAlloc[T: Comp](elem: Elem): Elem =
+  #TODO: cache!
+  let name = typedesc[T].name
+  result = nil
+  var parent = elem
+  while parent != nil and result == nil:
+    if parent.compAllocs == nil:
+      parent = parent.parent
+    else:
+      if name in parent.compAllocs:
+        result = parent
+      else:
+        parent = parent.parent
+  if result == nil:
+    echo "EXCEPTION: getUpAlloc[" & name & "] failed"
   
 # create a new instance of a Comp sub-type and attach it to an Elem
 proc attach*[T: Comp](owner: Elem): ptr T {.discardable.} =
   #TODO: figure out a way to check if owner already has the same Comp
   var index : int
-  (result, index) = allocComp[T](owner.univ, owner)
+  (result, index) = allocComp[T](getUpAlloc[T](owner), owner)
   result.initComp(owner)
   owner.comps[result.name] = CompRef(
     name: result.name,
     index: index,
     compPtr: result
   )
-
-# create a new instance of a Comp sub-type and attach it to a Univ
-proc attach*[T: Comp](owner: Univ) : ptr T {.discardable.} =
-  attach[T](cast[Elem](owner))
 
 # get the instance of a Comp sub-type attached to a given Elem
 proc getComp*[T: Comp](owner: Elem): ptr T =
@@ -283,10 +297,6 @@ proc getComp*[T: Comp](owner: Elem): ptr T =
     curPage = curPage.next
   addr curPage.contents[index]
 
-# get the instance of a Comp sub-type attached to a given Univ
-proc getComp*[T: Comp](owner: Univ): ptr T =
-  getComp[T](cast[Elem](owner))
-
 # get a named child Elem of a given Elem
 proc getElem*(node: Elem, search: string): Elem =
   #TODO: upgrade to parse `search`, allowing for hierarchical Elem tree traversal
@@ -295,15 +305,6 @@ proc getElem*(node: Elem, search: string): Elem =
     echo "EXCEPTION: relative Elem not found"
     return nil
   cast[Elem](node.elems[name])
-
-# destroy a given Univ
-proc destroy*[T: Univ](node: var T) =
-  node.internalDestroying = true
-  #[
-  if nch.root == addr node:
-    nch.root = nilcd;
-    node = nil # ???
-  ]#
 
 # destroy a given Elem
 proc destroy*[T: Elem](elem: T) =
@@ -324,6 +325,11 @@ proc destroy*[T: Elem](elem: T) =
       elem.next.prev = nil
   for child in elem.elems.mvalues:
     child.destroy()
+  #[
+  if nch.root == addr node:
+    nch.root = nilcd;
+    node = nil # ???
+  ]#
 
 # "finish off" a given Elem. do this e.g. at the end of a frame
 proc bury*[T: Elem](elem: var T) =
@@ -342,7 +348,7 @@ proc destroy*[T: Comp](comp: ptr T) =
   comp.active = false
   comp.internalDestroying = true
 
-proc cleanup*(univ: Univ) =
+proc cleanup*(univ: Elem) =
   for elem in univ.destroyingElems.mitems:
     bury(elem)
   univ.destroyingElems = @[]
@@ -355,7 +361,7 @@ iterator mitems*(elem: var Elem): Elem =
     e = e.next
 
 # iterate through all active instances of a given Comp sub-type in a given Univ
-iterator mitems*[T: Comp](univ: Univ): ptr T =
+iterator mitems*[T: Comp](univ: Elem): ptr T =
   var curPage = addr cast[CompAlloc[T]](univ.compAllocs[typedesc[T].name]).comps
   while curPage != nil:
     for i in curPage.contents.mitems:
@@ -422,19 +428,19 @@ proc tick(player: ptr PlayerController, dt: float) =
     owner.pos.x += speed
   if inputMgr.getInput(Input.action) == InputState.pressed:
     var realm: ptr CollisionRealm = getUp[CollisionRealm](owner)
-    #owner.destroy()
+    owner.destroy()
 
-proc playerController_draw*(univ: Univ, ren: ptr Renderer) =
+proc playerController_draw*(univ: Elem, ren: ptr Renderer) =
   for comp in mitems[PlayerController](univ):
     #ren.drawChar(comp.owner.pos, '@', comp.font, vector2d(200, 200))
     ren.drawString(comp.owner.pos, "NCH", comp.font, vector2d(72, 72), vector2d(15, 15), TextAlign.center, 0.75)
   discard
 
-proc playerController_tick*(univ: Univ, dt: float) =
+proc playerController_tick*(univ: Elem, dt: float) =
   for comp in mitems[PlayerController](univ):
     comp.tick(dt)
 
-proc regPlayerController*(univ: Univ) =
+proc regPlayerController*(univ: Elem) =
   on(getComp[TimestepMgr](univ).evTick, playerController_tick)
   on(getComp[Renderer](univ).evDraw, playerController_draw)
 
@@ -451,7 +457,7 @@ proc toInput*(key: Scancode): Input =
 
 # tests
 when isMainModule:
-  var app: Univ
+  var app: Elem
   initUniv(app, "nch test app")
   var world = app.add("world")
 
@@ -466,12 +472,12 @@ when isMainModule:
 
   register[VecText](app, newVecText, regVecText)
   register[CollisionRealm](app, newCollisionRealm, regCollisionRealm)
-  register[CircleCollider](app, newCircleCollider)
 
   attach[CollisionRealm](world)
 
   var p1 = world.add("player")
   attach[PlayerController](p1)
+  attach[CircleCollider](p1)
   p1.pos = vector2d(0, 0)
 
   var p2 = world.add("player")
