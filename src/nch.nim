@@ -15,6 +15,9 @@ import
 
 {.experimental.}
 
+
+converter toPoint2d*(x: Vector2d): Point2d = point2d(x.x, x.y)
+
 ### SYSTEM ###
 const
   compsPerPage = 2 #TODO: make per-Comp setting. this might require a lot of work
@@ -53,6 +56,7 @@ type
     index: int
     empty*: bool
     compPtr: ptr Comp
+    univ: Elem
   
   #TODO
   Event*[T: proc] = ref object of RootObj
@@ -272,24 +276,27 @@ proc getUpAlloc[T: Comp](elem: Elem): Elem =
 proc attach*[T: Comp](owner: Elem): ptr T {.discardable.} =
   #TODO: figure out a way to check if owner already has the same Comp
   var index : int
-  (result, index) = allocComp[T](getUpAlloc[T](owner), owner)
+  let univ = getUpAlloc[T](owner)
+  (result, index) = allocComp[T](univ, owner)
   result.initComp(owner)
   owner.comps[result.name] = CompRef(
     name: result.name,
     index: index,
-    compPtr: result
+    compPtr: result,
+    univ: univ
   )
 
 # get the instance of a Comp sub-type attached to a given Elem
 proc getComp*[T: Comp](owner: Elem): ptr T =
   let name = typedesc[T].name
-  if name notin owner.univ.compAllocs:
+  let upAlloc = getUpAlloc[T](owner)
+  if name notin upAlloc.compAllocs:
     echo "EXCEPTION: Comp " & name & " not registered w/ Univ"
     return nil
   if name notin owner.comps:
     echo "EXCEPTION: Comp " & name & " not found in Node"
     return nil
-  var compAlloc = cast[CompAlloc[T]](owner.univ.compAllocs[name])
+  var compAlloc = cast[CompAlloc[T]](upAlloc.compAllocs[name])
   var curPage = addr compAlloc.comps
   var index = owner.comps[name].index
   while index >= compsPerPage: # skip ahead to the given Page, given the index
@@ -338,7 +345,7 @@ proc bury*[T: Elem](elem: var T) =
     var val: CompRef
     (key, val) = i
     #TODO: bury Comps
-    elem.univ.compAllocs[key].vacancies.add(val.index) # add a vacancy to the memory manager
+    val.univ.compAllocs[key].vacancies.add(val.index) # add a vacancy to the memory manager
     val.compPtr.owner = nil
     val.compPtr.active = false
   elem = nil
@@ -353,7 +360,7 @@ proc cleanup*(univ: Elem) =
     bury(elem)
   univ.destroyingElems = @[]
 
-iterator mitems*(elem: var Elem): Elem =
+iterator siblings*(elem: var Elem): Elem =
   var e = elem
   yield e
   while e.next != nil:
@@ -409,10 +416,14 @@ type
   PlayerController = object of Comp
     font: VecFont
 
+proc playerController_collision(a, b: ptr Collider) =
+  b.owner.destroy()
+
 proc newPlayerController*(owner: Elem): PlayerController =
   result = PlayerController(
     font: vecFont("sys")
   )
+  on(getComp[CircleCollider](owner).evCollision, playerController_collision)
 
 proc tick(player: ptr PlayerController, dt: float) =
   let inputMgr = getComp[InputMgr[Input]](player.univ)
@@ -427,7 +438,6 @@ proc tick(player: ptr PlayerController, dt: float) =
   if inputMgr.getInput(Input.right) == InputState.down:
     owner.pos.x += speed
   if inputMgr.getInput(Input.action) == InputState.pressed:
-    var realm: ptr CollisionRealm = getUp[CollisionRealm](owner)
     owner.destroy()
 
 proc playerController_draw*(univ: Elem, ren: ptr Renderer) =
@@ -476,12 +486,13 @@ when isMainModule:
   attach[CollisionRealm](world)
 
   var p1 = world.add("player")
-  attach[PlayerController](p1)
   attach[CircleCollider](p1)
+  attach[PlayerController](p1)
   p1.pos = vector2d(0, 0)
 
   var p2 = world.add("player")
   attach[VecText](p2).initialize("experimental interactive", TextAlign.right, vector2d(8, 7), vector2d(2.5, 5))
+  attach[CircleCollider](p2)
   p2.pos = vector2d(154, 46)
 
   var p3 = p1.add("player")
