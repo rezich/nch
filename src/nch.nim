@@ -372,12 +372,30 @@ iterator items*[T: proc](event: Event[T]): (T, CompRef) =
   for i in event.after:
     yield i
 
-import nchpkg/sys
-import nchpkg/vgfx
 
+proc getUp*[T: Comp](elem: Elem): ptr T =
+  #TODO: cache!
+  result = nil
+  let name = typedesc[T].name
+  var parent = elem.parent
+  while parent != nil and result == nil:
+    if name in parent.comps:
+      result = cast[ptr T](
+        getComp[T](parent)
+      )
+    else:
+      parent = parent.parent
+  if result == nil:
+    echo "EXCEPTION: couldn't getUp[" & name & "] on Elem!"
 
 
 ### DEMO ###
+import
+  nchpkg/sys,
+  nchpkg/phy,
+  nchpkg/vgfx
+
+
 type
   # input definitions for InputMgr
   Input {.pure.} = enum none, up, down, left, right, action, restart, quit
@@ -403,7 +421,8 @@ proc tick(player: ptr PlayerController, dt: float) =
   if inputMgr.getInput(Input.right) == InputState.down:
     owner.pos.x += speed
   if inputMgr.getInput(Input.action) == InputState.pressed:
-    owner.destroy()
+    var realm: ptr CollisionRealm = getUp[CollisionRealm](owner)
+    #owner.destroy()
 
 proc playerController_draw*(univ: Univ, ren: ptr Renderer) =
   for comp in mitems[PlayerController](univ):
@@ -446,6 +465,10 @@ when isMainModule:
   register[PlayerController](app, newPlayerController, regPlayerController)
 
   register[VecText](app, newVecText, regVecText)
+  register[CollisionRealm](app, newCollisionRealm, regCollisionRealm)
+  register[CircleCollider](app, newCircleCollider)
+
+  attach[CollisionRealm](world)
 
   var p1 = world.add("player")
   attach[PlayerController](p1)
