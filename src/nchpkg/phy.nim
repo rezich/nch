@@ -31,7 +31,7 @@ type
 proc newCircleCollider*(owner: Elem): CircleCollider =
   CircleCollider(
     evCollision: newEvent[proc (a, b: ptr Collider)](),
-    radius: 8
+    radius: 0.5
   )
 
 proc initialize*(cc: ptr CircleCollider, radius: float) =
@@ -92,7 +92,7 @@ proc collisionRealm_tick(univ: Elem, dt: float) =
 proc collisionRealm_draw(univ: Elem, renderer: ptr Renderer) =
   for realm in mitems[CollisionRealm](univ):
     for circ in mitems[CircleCollider](realm.owner):
-      renderer.drawCircle(circ.owner.globalPos, circ.radius, color(255, 0, 0, 255))
+      discard #renderer.drawCircle(circ.owner.globalPos, circ.radius * circ.owner.globalScale, color(255, 0, 0, 255))
     for aabb in mitems[AABBCollider](realm.owner):
       discard #TODO
 

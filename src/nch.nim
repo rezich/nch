@@ -23,13 +23,13 @@ converter toVector2d*(x: Point2d): Vector2d = vector2d(x.x, x.y)
 
 ### SYSTEM ###
 const
-  compsPerPage = 2 #TODO: make per-Comp setting. this might require a lot of work
+  compsPerPage = 8 #TODO: make per-Comp setting. this might require a lot of work
 
 type
   # memory manager container
-  Page*[T; N: static[int]] = object of RootObj
-    contents*: array[0..N, T]
-    next: ptr Page[T, N]
+  Page*[T] = object of RootObj
+    contents*: array[0..compsPerPage, T]
+    next: ptr Page[T]
 
   #TODO
   Node* = object of RootObj
@@ -44,7 +44,7 @@ type
 
   # Comp allocator, stored in a Univ
   CompAlloc*[T] = ref object of CompAllocBase
-    comps*: Page[T, compsPerPage]
+    comps*: Page[T]
     newProc: proc (owner: Elem): T
     last: int
   
@@ -105,6 +105,12 @@ proc globalPos*(elem: Elem): Vector2d =
   var parent = elem.parent
   while parent != nil:
     result = parent.pos + result
+    parent = parent.parent
+proc globalScale*(elem: Elem): Vector2d =
+  result = elem.scale
+  var parent = elem.parent
+  while parent != nil:
+    result = parent.scale + result
     parent = parent.parent
 
 # subscribe a proc to an Event
@@ -194,16 +200,16 @@ proc initComp*[T: Comp](comp: var T, owner: Elem) =
   comp.internalDestroying = false
 
 # create the first Page for the memory manager
-proc newPage[T: Comp](): Page[T, compsPerPage] =
-  result = Page[T, compsPerPage](
+proc newPage[T: Comp](): Page[T] =
+  result = Page[T](
     next: nil
   )
   for i in result.contents.mitems:
     i.active = false
 
 # create an additional Page for the memory manager
-proc newPage[T: Comp](prev: ptr Page[T, compsPerPage], compsPerPage: static[int]): ptr Page[T, compsPerPage] {.discardable.} =
-  result = cast[ptr Page[T, compsPerPage]](alloc(sizeof(Page[T, compsPerPage])))
+proc newPage[T: Comp](prev: ptr Page[T]): ptr Page[T] {.discardable.} =
+  result = cast[ptr Page[T]](alloc(sizeof(Page[T])))
   result.next = nil
   prev.next = result
   for i in result.contents.mitems:
@@ -251,11 +257,17 @@ proc allocComp[T: Comp](univ: Elem, owner: Elem): (ptr T, int) =
   
   let realIndex = index
   var curPage = addr compAlloc.comps
+  var curPageNum = 0
   while index >= compsPerPage: # skip ahead to the necessary Page, given the index
     index = index - compsPerPage
     if curPage.next == nil:
-      newPage[T](curPage, compsPerPage)
+      newPage[T](curPage)
     curPage = curPage.next
+    inc curPageNum
+  echo "allocating " & name & "#" & $realIndex & " (page " & $curPageNum & ", index " & $index & ")"
+  if curPage == nil:
+    echo "ERROR: SHOULD NOT BE NIL"
+  
   curPage.contents[index] = compAlloc.newProc(owner)
   result = (cast[ptr T](addr(curPage.contents[index])), realIndex)
 
@@ -444,7 +456,8 @@ proc tick(player: ptr PlayerController, dt: float) =
   if inputMgr.getInput(Input.action) == InputState.pressed:
     var bullet = owner.parent.add("bullet")
     attach[VecText](bullet).initialize(">")
-    bullet.pos = owner.pos + vector2d(1, 0)
+    bullet.pos = owner.pos + vector2d(1.5, 0)
+    attach[CircleCollider](bullet)
 
 proc playerController_draw*(univ: Elem, ren: ptr Renderer) =
   for comp in mitems[PlayerController](univ):
@@ -496,7 +509,7 @@ when isMainModule:
   cam.pos = vector2d(0, 0)
 
   var p1 = world.add("player")
-  attach[CircleCollider](p1).initialize(32)
+  attach[CircleCollider](p1)
   attach[PlayerController](p1)
   p1.pos = vector2d(-5, 0)
 
