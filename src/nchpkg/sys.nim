@@ -92,6 +92,7 @@ proc getInput*[T: enum](mgr: var InputMgr[T], input: T): InputState =
 ### Renderer - SDL-based graphical renderer ###
 type
   Camera* = object of Comp
+    size*: float
 
   Renderer* = object of Comp
     ren*: RendererPtr
@@ -144,7 +145,7 @@ proc initialize*(renderer: var Renderer, width: int, height: int) =
 
 proc getMatrix*(cam: ptr Camera, renderer: ptr Renderer): Matrix2d =
   #cam.owner.getTransform
-  move(-cam.owner.globalPos) & rotate(cam.owner.rot) & stretch(cam.owner.scale.x, -cam.owner.scale.y) & move(renderer.center.x.float, renderer.center.y.float)
+  move(-cam.owner.globalPos) & rotate(cam.owner.rot) & scale(min(renderer.width, renderer.height).float / cam.size) & stretch(cam.owner.scale.x, -cam.owner.scale.y) & move(renderer.center.x.float, renderer.center.y.float)
 
 # render things to the screen
 proc tick(renderer: ptr Renderer, dt: float) =
@@ -174,16 +175,20 @@ proc shutdown*(renderer: var Renderer) =
   sdl2.quit()
 
 proc newCamera(owner: Elem): Camera =
-  result = Camera()
+  result = Camera(
+    size: 1
+  )
   if getUp[Renderer](owner).camera == nil:
     getUp[Renderer](owner).camera = addr(result)
 
 proc regCamera(univ: Elem) =
   discard
 
+proc initialize*(camera: ptr Camera, size: float) =
+  camera.size = size
+
 
 # register Renderer with a given Univ
 proc regRenderer*(univ: Elem) =
   register[Camera](univ, newCamera, regCamera)
   after(getComp[TimestepMgr](univ).evTick, renderer_tick)
-

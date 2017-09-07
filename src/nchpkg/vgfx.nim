@@ -92,7 +92,7 @@ proc drawCircle*(renderer: ptr Renderer, pos: Vector2d, radius: float, color: Co
   var pos = renderer.worldToScreen(pos)
   renderer.ren.circleRGBA(pos.x.int16, pos.y.int16, radius.int16, color.r.uint8, color.g.uint8, color.b.uint8, color.a.uint8)
 
-proc drawChar*(renderer: ptr Renderer, pos: Vector2d, c: char, font: VecFont, scale: Vector2d, slant: float = 0) =
+proc drawChar*(renderer: ptr Renderer, pos: Vector2d, c: char, font: VecFont, scale: Vector2d, slant: float = 0) {.deprecated.} =
   renderer.ren.setDrawColor(255, 255, 255, 255)
   let glyph = font[c]
   var lastPoint = Vector2d()
@@ -108,9 +108,41 @@ proc drawChar*(renderer: ptr Renderer, pos: Vector2d, c: char, font: VecFont, sc
     lastPoint.x = stroke.front.x
     lastPoint.y = stroke.front.y
 
+proc drawChar*(renderer: ptr Renderer, trans: Matrix2d, c: char, font: VecFont, scale: Vector2d, slant: float = 0) =
+  renderer.ren.setDrawColor(255, 255, 255, 255)
+  let glyph = font[c]
+  var lastPoint = Vector2d()
+  for stroke in glyph.strokes:
+    var frontPoint = (vector2d(stroke.front.x + stroke.front.y * slant, stroke.front.y) * scale * 0.5).toPoint2d & trans
+    var backPoint: Vector2d
+    if stroke.continueFromPrevious:
+      backPoint = (vector2d(lastPoint.x + lastPoint.y * slant, lastPoint.y) * scale * 0.5).toPoint2d & trans
+    else:
+      backPoint = (vector2d(stroke.back.x + stroke.back.y * slant, stroke.back.y) * scale * 0.5).toPoint2d & trans
+
+    renderer.drawLine(backPoint, frontPoint)
+    lastPoint.x = stroke.front.x
+    lastPoint.y = stroke.front.y
+
 type TextAlign* {.pure.} = enum left, center, right
 
-proc drawString*(renderer: ptr Renderer, pos: Vector2d, str: string, font: VecFont, scale: Vector2d, spacing: Vector2d, textAlign: TextAlign, slant: float = 0) =
+proc drawString*(renderer: ptr Renderer, trans: Matrix2d, str: string, font: VecFont, scale: Vector2d, spacing: Vector2d, textAlign: TextAlign, slant: float = 0) =
+  var i = 0
+  var trans = trans
+  
+  case textAlign
+  of TextAlign.left:
+    trans = move(vector2d(scale.x * 0.5, 0)) & trans
+  of TextAlign.center:
+    trans = move(vector2d(-(str.len.float - 1) * (scale.x + spacing.x) * 0.5, 0)) & trans
+  of TextAlign.right:
+    trans = move(vector2d(-(str.len.float - 1) * (scale.x + spacing.x), 0) - vector2d(scale.x * 0.5, 0)) & trans
+  while i < str.len:
+    renderer.drawChar(trans, str[i], font, scale, slant)
+    trans = move(vector2d(1, 0) * (scale + spacing)) & trans
+    i += 1
+
+proc drawString*(renderer: ptr Renderer, pos: Vector2d, str: string, font: VecFont, scale: Vector2d, spacing: Vector2d, textAlign: TextAlign, slant: float = 0) {.deprecated.} =
   var i = 0
   var pos = pos
   case textAlign
@@ -150,7 +182,7 @@ proc vecText_draw*(univ: Elem, ren: ptr Renderer) =
 proc regVecText*(univ: Elem) =
   on(getComp[Renderer](univ).evDraw, vecText_draw)
 
-proc initialize*(vt: var VecText, text: string, textAlign: TextAlign, scale: Vector2d, spacing: Vector2d, slant: float = 0) =
+proc initialize*(vt: var VecText, text: string, textAlign: TextAlign = TextAlign.center, scale: Vector2d = vector2d(1, 1), spacing: Vector2d = vector2d(0, 0), slant: float = 0) =
   vt.text = text
   vt.textAlign = textAlign
   vt.scale = scale

@@ -19,6 +19,7 @@ import
 converter toPoint2d*(x: Vector2d): Point2d = point2d(x.x, x.y)
 converter toPoint*(x: Vector2d): Point = point(x.x.cint, x.y.cint)
 converter toPoint*(x: Point2d): Point = point(x.x.cint, x.y.cint)
+converter toVector2d*(x: Point2d): Vector2d = vector2d(x.x, x.y)
 
 ### SYSTEM ###
 const
@@ -93,7 +94,7 @@ proc nilCompRef*(): CompRef =
   )
 
 proc getTransform*(elem: Elem): Matrix2d =
-  result = rotate(elem.rot) & stretch(elem.scale.x, elem.scale.y) & move(elem.pos)
+  result = stretch(elem.scale.x, elem.scale.y) & rotate(elem.rot) & move(elem.pos)
   var parent = elem.parent
   while parent != nil:
     result = parent.getTransform() & result
@@ -430,27 +431,25 @@ proc newPlayerController*(owner: Elem): PlayerController =
 proc tick(player: ptr PlayerController, dt: float) =
   let inputMgr = getComp[InputMgr[Input]](player.univ)
   let owner = player.owner
-  let speed = 4.0
+  let speed = 0.1
   let cam = getUp[Renderer](player.owner).camera
-  cam.owner.rot = sin(getTicks().float / 800.0) * DEG15
+  #cam.owner.rot = sin(getTicks().float / 800.0) * DEG15
+  #cam.owner.scale.x = 1.75 + sin(getTicks().float / 800.0) * 0.75
+  #cam.owner.scale.y = cam.owner.scale.x
   #owner.rot = sin(getTicks().float / 800.0) * DEG15
   if inputMgr.getInput(Input.up) == InputState.down:
-    #owner.pos.y += speed
     owner.pos.y += speed
   if inputMgr.getInput(Input.down) == InputState.down:
     owner.pos.y -= speed
-  if inputMgr.getInput(Input.left) == InputState.down:
-    owner.pos.x -= speed
-  if inputMgr.getInput(Input.right) == InputState.down:
-    owner.pos.x += speed
-  if inputMgr.getInput(Input.action) == InputState.down:
-    cam.owner.scale += vector2d(0.01, 0.01)
-    #owner.destroy()
+  if inputMgr.getInput(Input.action) == InputState.pressed:
+    var bullet = owner.parent.add("bullet")
+    attach[VecText](bullet).initialize(">")
+    bullet.pos = owner.pos + vector2d(1, 0)
 
 proc playerController_draw*(univ: Elem, ren: ptr Renderer) =
   for comp in mitems[PlayerController](univ):
     #ren.drawChar(comp.owner.pos, '@', comp.font, vector2d(200, 200))
-    ren.drawString(comp.owner.pos, "NCH", comp.font, vector2d(72, 72), vector2d(15, 15), TextAlign.center, 0)
+    ren.drawString(comp.owner.getTransform, "@", comp.font, vector2d(1, 1), vector2d(0.2, 0.2), TextAlign.center, 0)
   discard
 
 proc playerController_tick*(univ: Elem, dt: float) =
@@ -469,7 +468,7 @@ proc toInput*(key: Scancode): Input =
   of SDL_SCANCODE_LEFT: Input.left
   of SDL_SCANCODE_RIGHT: Input.right
   of SDL_SCANCODE_ESCAPE: Input.quit
-  of SDL_SCANCODE_RETURN: Input.action
+  of SDL_SCANCODE_SPACE: Input.action
   else: Input.none
 
 # tests
@@ -493,21 +492,12 @@ when isMainModule:
   attach[CollisionRealm](world)
 
   var cam = app.add("mainCam")
-  attach[Camera](cam)
+  attach[Camera](cam).initialize(10)
   cam.pos = vector2d(0, 0)
 
   var p1 = world.add("player")
   attach[CircleCollider](p1).initialize(32)
   attach[PlayerController](p1)
-  p1.pos = vector2d(0, 0)
-
-  var p2 = world.add("player")
-  attach[VecText](p2).initialize("experimental interactive", TextAlign.right, vector2d(8, 7), vector2d(2.5, 5))
-  attach[CircleCollider](p2).initialize(64)
-  p2.pos = vector2d(154, 46)
-
-  var p3 = p1.add("player")
-  attach[VecText](p3).initialize("multimedia framework", TextAlign.left, vector2d(9, 7), vector2d(4, 5))
-  p3.pos = vector2d(-154, -46)
+  p1.pos = vector2d(-5, 0)
 
   getComp[TimestepMgr](app).initialize()
