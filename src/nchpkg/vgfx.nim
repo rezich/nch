@@ -88,8 +88,14 @@ proc drawLine*(renderer: ptr Renderer, back, front: Vector2d) =
   var p2 = renderer.worldToScreen(front)
   renderer.ren.drawLine(p1.x, p1.y, p2.x, p2.y)
 
-proc drawCircle*(renderer: ptr Renderer, pos: Vector2d, radius: float, color: Color) =
+proc drawCircle*(renderer: ptr Renderer, pos: Vector2d, radius: float, color: Color) {.deprecated.} =
   var pos = renderer.worldToScreen(pos)
+  renderer.ren.circleRGBA(pos.x.int16, pos.y.int16, radius.int16, color.r.uint8, color.g.uint8, color.b.uint8, color.a.uint8)
+
+proc drawCircle*(renderer: ptr Renderer, trans: Matrix2d, radius: float, color: Color) =
+  var pos = renderer.worldToScreen(point2d(0, 0) & trans)
+  var radpos = renderer.worldToScreen((polar(point2d(0, 0) & trans, 0.0, radius)).toVector2d())
+  var radius = (radpos.x - pos.x).float
   renderer.ren.circleRGBA(pos.x.int16, pos.y.int16, radius.int16, color.r.uint8, color.g.uint8, color.b.uint8, color.a.uint8)
 
 proc drawChar*(renderer: ptr Renderer, pos: Vector2d, c: char, font: VecFont, scale: Vector2d, slant: float = 0) {.deprecated.} =
@@ -165,22 +171,25 @@ type VecText* = object of Comp
   spacing: Vector2d
   slant: float
 
-proc newVecText*(owner: Elem): VecText =
-  result = VecText(
-    font: vecFont("sys"), #TODO: load this separately!
-    text: "VecString",
-    textAlign: TextAlign.center,
-    scale: vector2d(1, 1),
-    spacing: vector2d(0, 0),
-    slant: 0.0
-  )
-
-proc vecText_draw*(univ: Elem, ren: ptr Renderer) =
-  for comp in mitems[VecText](univ):
-    ren.drawString(comp.owner.globalPos, comp.text, comp.font, comp.scale, comp.spacing, comp.textAlign, comp.slant)
-
 proc regVecText*(univ: Elem) =
-  on(getComp[Renderer](univ).evDraw, vecText_draw)
+  register[VecText](
+    univ,
+    proc (owner: Elem): VecText =
+      result = VecText(
+        font: vecFont("sys"), #TODO: load this separately!
+        text: "VecString",
+        textAlign: TextAlign.center,
+        scale: vector2d(1, 1),
+        spacing: vector2d(0, 0),
+        slant: 0.0
+      )
+    ,
+    proc (owner: Elem) =
+      on(getComp[Renderer](univ).evDraw, proc (univ: Elem, ren: ptr Renderer) =
+        for comp in mitems[VecText](univ):
+          ren.drawString(comp.owner.getTransform(), comp.text, comp.font, comp.scale, comp.spacing, comp.textAlign, comp.slant)
+      )
+  )
 
 proc initialize*(vt: var VecText, text: string, textAlign: TextAlign = TextAlign.center, scale: Vector2d = vector2d(1, 1), spacing: Vector2d = vector2d(0, 0), slant: float = 0) =
   vt.text = text
@@ -188,7 +197,3 @@ proc initialize*(vt: var VecText, text: string, textAlign: TextAlign = TextAlign
   vt.scale = scale
   vt.spacing = spacing
   vt.slant = slant
-
-proc drawPoly*(renderer: ptr Renderer, points: var openArray[Point]) =
-  renderer.ren.setDrawColor(0, 192, 0, 255)
-  renderer.ren.drawLines(addr points[0], points.len.cint)

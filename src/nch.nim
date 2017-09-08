@@ -20,10 +20,11 @@ converter toPoint2d*(x: Vector2d): Point2d = point2d(x.x, x.y)
 converter toPoint*(x: Vector2d): Point = point(x.x.cint, x.y.cint)
 converter toPoint*(x: Point2d): Point = point(x.x.cint, x.y.cint)
 converter toVector2d*(x: Point2d): Vector2d = vector2d(x.x, x.y)
+converter toVector2d*(x: Point): Vector2d = vector2d(x.x.float, x.y.float)
 
 ### SYSTEM ###
 const
-  compsPerPage = 8 #TODO: make per-Comp setting. this might require a lot of work
+  compsPerPage = 2 #TODO: make per-Comp setting. this might require a lot of work
 
 type
   # memory manager container
@@ -101,17 +102,10 @@ proc getTransform*(elem: Elem): Matrix2d =
     parent = parent.parent
 
 proc globalPos*(elem: Elem): Vector2d =
-  result = elem.pos
-  var parent = elem.parent
-  while parent != nil:
-    result = parent.pos + result
-    parent = parent.parent
+  point2d(0, 0) & elem.getTransform
+
 proc globalScale*(elem: Elem): Vector2d =
-  result = elem.scale
-  var parent = elem.parent
-  while parent != nil:
-    result = parent.scale + result
-    parent = parent.parent
+  vector2d(1, 1) & elem.getTransform
 
 # subscribe a proc to an Event
 proc before*[T](event: Event[T], procedure: T) =
@@ -212,8 +206,10 @@ proc newPage[T: Comp](prev: ptr Page[T]): ptr Page[T] {.discardable.} =
   result = cast[ptr Page[T]](alloc(sizeof(Page[T])))
   result.next = nil
   prev.next = result
-  for i in result.contents.mitems:
-    i.active = false
+  #[for i in result.contents.mitems:`
+    i.active = false]#
+  for i in 0..compsPerPage:
+    result.contents[i] = T(active: false)
 
 # create a new CompAlloc for the memory manager
 proc newCompAlloc[T: Comp](newProc: proc (owner: Elem): T) : CompAlloc[T] =
@@ -226,7 +222,7 @@ proc newCompAlloc[T: Comp](newProc: proc (owner: Elem): T) : CompAlloc[T] =
   )
 
 # register a Comp sub-type into a given Univ
-proc register*[T](univ: Elem, newProc: proc (owner: Elem): T, regProc: proc (univ: Elem) = nil) =
+proc register*[T: Comp](univ: Elem, newProc: proc (owner: Elem): T, regProc: proc (univ: Elem) = nil) =
   let name = typedesc[T].name
 
   if univ.compAllocs == nil:
@@ -264,7 +260,8 @@ proc allocComp[T: Comp](univ: Elem, owner: Elem): (ptr T, int) =
       newPage[T](curPage)
     curPage = curPage.next
     inc curPageNum
-  echo "allocating " & name & "#" & $realIndex & " (page " & $curPageNum & ", index " & $index & ")"
+  #echo "allocating " & name & "#" & $realIndex
+  #echo "    (page " & $curPageNum & ", index " & $index & ")"
   if curPage == nil:
     echo "ERROR: SHOULD NOT BE NIL"
   
@@ -430,48 +427,76 @@ type
   
   PlayerController = object of Comp
     font: VecFont
+  
+  Bullet = object of Comp
+    velocity: Vector2d
+  
+  Enemy = object of Comp
 
-proc playerController_collision(a, b: ptr Collider) =
-  b.owner.destroy()
+proc newEnemy*(owner: Elem): Enemy =
+  result = Enemy()
 
-proc newPlayerController*(owner: Elem): PlayerController =
-  result = PlayerController(
-    font: vecFont("sys")
+
+proc regBullet*(univ: Elem) =
+  register[Bullet](
+    univ,
+    proc (owner: Elem): Bullet =
+      result = Bullet(
+        velocity: vector2d(0.1, 0)
+      )
+      on(getComp[CircleCollider](owner).evCollision, proc (a, b: ptr Collider) =
+        if (b.owner.name != "bullet"):
+          a.owner.destroy()
+          b.owner.destroy()
+      )
+    ,
+    proc (owner: Elem) =
+      on(getComp[TimestepMgr](univ).evTick, proc (univ: Elem, dt: float) =
+        for bullet in mitems[Bullet](univ):
+          bullet.owner.pos += bullet.velocity
+          bullet.owner.rot -= 0.1
+          if bullet.owner.pos.x > 8:
+            bullet.owner.destroy()
+      )
   )
-  on(getComp[CircleCollider](owner).evCollision, playerController_collision)
-
-proc tick(player: ptr PlayerController, dt: float) =
-  let inputMgr = getComp[InputMgr[Input]](player.univ)
-  let owner = player.owner
-  let speed = 0.1
-  let cam = getUp[Renderer](player.owner).camera
-  #cam.owner.rot = sin(getTicks().float / 800.0) * DEG15
-  #cam.owner.scale.x = 1.75 + sin(getTicks().float / 800.0) * 0.75
-  #cam.owner.scale.y = cam.owner.scale.x
-  #owner.rot = sin(getTicks().float / 800.0) * DEG15
-  if inputMgr.getInput(Input.up) == InputState.down:
-    owner.pos.y += speed
-  if inputMgr.getInput(Input.down) == InputState.down:
-    owner.pos.y -= speed
-  if inputMgr.getInput(Input.action) == InputState.pressed:
-    var bullet = owner.parent.add("bullet")
-    attach[VecText](bullet).initialize(">")
-    bullet.pos = owner.pos + vector2d(1.5, 0)
-    attach[CircleCollider](bullet)
-
-proc playerController_draw*(univ: Elem, ren: ptr Renderer) =
-  for comp in mitems[PlayerController](univ):
-    #ren.drawChar(comp.owner.pos, '@', comp.font, vector2d(200, 200))
-    ren.drawString(comp.owner.getTransform, "@", comp.font, vector2d(1, 1), vector2d(0.2, 0.2), TextAlign.center, 0)
-  discard
-
-proc playerController_tick*(univ: Elem, dt: float) =
-  for comp in mitems[PlayerController](univ):
-    comp.tick(dt)
 
 proc regPlayerController*(univ: Elem) =
-  on(getComp[TimestepMgr](univ).evTick, playerController_tick)
-  on(getComp[Renderer](univ).evDraw, playerController_draw)
+  register[PlayerController](
+    univ,
+    proc (owner: Elem): PlayerController =
+      result = PlayerController(
+        font: vecFont("sys")
+      )
+      on(getComp[CircleCollider](owner).evCollision, proc (a, b: ptr Collider) =
+        b.owner.destroy()
+      )
+    ,
+    proc (owner: Elem) =
+      on(getComp[TimestepMgr](univ).evTick, proc (univ: Elem, dt: float) =
+        for player in mitems[PlayerController](univ):
+          let inputMgr = getComp[InputMgr[Input]](player.owner.univ)
+          let owner = player.owner
+          let speed = 0.1
+          let cam = getUp[Renderer](player.owner).camera
+          #cam.owner.rot = sin(getTicks().float / 800.0) * DEG15 * 0.5
+          #cam.size = 10 + sin(getTicks().float / 1000.0) * 2
+          owner.rot = sin(getTicks().float / 800.0) * DEG15
+          if inputMgr.getInput(Input.up) == InputState.down:
+            owner.pos.y += speed
+          if inputMgr.getInput(Input.down) == InputState.down:
+            owner.pos.y -= speed
+          if inputMgr.getInput(Input.action) == InputState.pressed:
+            var bullet = owner.parent.add("bullet")
+            attach[VecText](bullet).initialize("O")
+            bullet.pos = owner.pos + vector2d(1.5, 0)
+            attach[CircleCollider](bullet)
+            attach[Bullet](bullet)
+      )
+      on(getComp[Renderer](univ).evDraw, proc (univ: Elem, ren: ptr Renderer) =
+        for comp in mitems[PlayerController](univ):
+          ren.drawString(comp.owner.getTransform, "@", comp.font, vector2d(1, 1), vector2d(0.2, 0.2), TextAlign.center, 0)
+      )
+  )
 
 # convert input scancodes into an Input
 proc toInput*(key: Scancode): Input =
@@ -490,17 +515,20 @@ when isMainModule:
   initUniv(app, "nch test app")
   var world = app.add("world")
 
-  register[TimestepMgr](app, newTimestepMgr)
+  regTimestepMgr(app)
   attach[TimestepMgr](app)
 
-  register[InputMgr[Input]](app, newInputMgr[Input], regInputMgr[Input])
-  register[Renderer](app, newRenderer, regRenderer)
+  regInputMgr[Input](app)
+  regRenderer(app)
+
   attach[Renderer](app).initialize(1024, 768)
   attach[InputMgr[Input]](app).initialize(toInput)
-  register[PlayerController](app, newPlayerController, regPlayerController)
 
-  register[VecText](app, newVecText, regVecText)
-  register[CollisionRealm](app, newCollisionRealm, regCollisionRealm)
+  regBullet(app)
+  regPlayerController(app)
+
+  regVecText(app)
+  regCollisionRealm(app)
 
   attach[CollisionRealm](world)
 
@@ -512,5 +540,20 @@ when isMainModule:
   attach[CircleCollider](p1)
   attach[PlayerController](p1)
   p1.pos = vector2d(-5, 0)
+
+  var obst = world.add("obstacle")
+  attach[CircleCollider](obst)
+  attach[VecText](obst).initialize("#")
+  obst.pos = vector2d(5, 3)
+
+  obst = world.add("obstacle")
+  attach[CircleCollider](obst)
+  attach[VecText](obst).initialize("#")
+  obst.pos = vector2d(5, 0)
+
+  obst = world.add("obstacle")
+  attach[CircleCollider](obst)
+  attach[VecText](obst).initialize("#")
+  obst.pos = vector2d(5, -3)
 
   getComp[TimestepMgr](app).initialize()

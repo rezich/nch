@@ -21,10 +21,16 @@ type
     fpsman: FpsManager
     evTick*: nch.Event[proc (univ: Elem, dt: float)]
 
-# create a new TimestepMgr instance
-proc newTimestepMgr*(owner: Elem): TimestepMgr =
-  result = TimestepMgr(
-    evTick: newEvent[proc (univ: Elem, dt: float)]()
+proc regTimestepMgr*(univ: Elem) =
+  register[TimestepMgr](
+    univ,
+    proc (owner: Elem): TimestepMgr =
+      result = TimestepMgr(
+        evTick: newEvent[proc (univ: Elem, dt: float)]()
+      )
+    ,
+    proc (owner: Elem) =
+      discard
   )
 
 # initialize a given TimestepMgr
@@ -46,35 +52,31 @@ type
   # button state enumeration
   InputState* {.pure.} = enum up, pressed, down, released
 
-# update input state
-proc tick*[T: enum](mgr: ptr InputMgr[T], dt: float) =
-  shallowCopy(mgr.inputLast, mgr.input)
-  var event = defaultEvent
-  while pollEvent(event):
-    case event.kind
-    of QuitEvent:
-      mgr.internalUniv.destroy()
-      discard
-    of KeyDown:
-      mgr.input[mgr.handler(event.key.keysym.scancode)] = true
-    of KeyUp:
-      mgr.input[mgr.handler(event.key.keysym.scancode)] = false
-    else:
-      discard
-
-# InputMgr tick event
-proc inputMgr_tick*[T: enum](univ: Elem, dt: float) =
-  for comp in mitems[InputMgr[T]](univ):
-    tick[T](comp, dt)
-
-# create a new InputMgr instance
-proc newInputMgr*[T: enum](owner: Elem): InputMgr[T] =
-  result = InputMgr[T]()
-  result.initComp(owner)
-
-# register InputMgr with a given Univ
 proc regInputMgr*[T: enum](univ: Elem) =
-  before(getComp[TimestepMgr](univ).evTick, inputMgr_tick[T])
+  register[InputMgr[T]](
+    univ,
+    proc (owner: Elem): InputMgr[T] =
+      result = InputMgr[T]()
+      result.initComp(owner)
+    ,
+    proc (owner: Elem) =
+      before(getComp[TimestepMgr](univ).evTick, proc (univ: Elem, dt: float) =
+        for mgr in mitems[InputMgr[T]](univ):
+          shallowCopy(mgr.inputLast, mgr.input)
+          var event = defaultEvent
+          while pollEvent(event):
+            case event.kind
+            of QuitEvent:
+              mgr.internalUniv.destroy()
+              discard
+            of KeyDown:
+              mgr.input[mgr.handler(event.key.keysym.scancode)] = true
+            of KeyUp:
+              mgr.input[mgr.handler(event.key.keysym.scancode)] = false
+            else:
+              discard
+      )
+  )
 
 # initialize a given InputMgr
 proc initialize*[T: enum](mgr: var InputMgr[T], handler: proc (key: Scancode): T) =
@@ -86,8 +88,6 @@ proc getInput*[T: enum](mgr: var InputMgr[T], input: T): InputState =
   if mgr.input[input] and not mgr.inputLast[input]: return InputState.pressed
   if mgr.input[input] and mgr.inputLast[input]: return InputState.down
   return InputState.released
-
-
 
 ### Renderer - SDL-based graphical renderer ###
 type
@@ -110,13 +110,6 @@ type
 proc worldToScreen*(renderer: ptr Renderer, v: Vector2d): Point =
   #var p = (v & renderer.camMatrix).toPoint2d() - renderer.camera.owner.pos
   (v.toPoint2d() & renderer.camMatrix).toPoint()
-
-# create a new Renderer instance
-proc newRenderer*(owner: Elem): Renderer =
-  result = Renderer(
-    evDraw: newEvent[proc (univ: Elem, ren: ptr Renderer)](),
-    camera: nil
-  )
 
 # allow SDL to fail gracefully
 template sdlFailIf(cond: typed, reason: string) =
@@ -147,48 +140,52 @@ proc getMatrix*(cam: ptr Camera, renderer: ptr Renderer): Matrix2d =
   #cam.owner.getTransform
   move(-cam.owner.globalPos) & rotate(cam.owner.rot) & scale(min(renderer.width, renderer.height).float / cam.size) & stretch(cam.owner.scale.x, -cam.owner.scale.y) & move(renderer.center.x.float, renderer.center.y.float)
 
-# render things to the screen
-proc tick(renderer: ptr Renderer, dt: float) =
-  renderer.ren.setDrawColor(0, 0, 0, 255)
-  renderer.ren.clear()
-
-  if renderer.camera == nil:
-    return
-  
-  renderer.camMatrix = renderer.camera.getMatrix(renderer)
-
-  for ev in renderer.evDraw:
-    let (p, _) = ev
-    p(renderer.internalUniv, renderer)
-
-  renderer.ren.present()
-
-# Renderer tick event
-proc renderer_tick(univ: Elem, dt: float) =
-  for comp in mItems[Renderer](univ):
-    comp.tick(dt)
-
 # shut down a given Renderer
 proc shutdown*(renderer: var Renderer) =
   renderer.win.destroy()
   renderer.ren.destroy()
   sdl2.quit()
 
-proc newCamera(owner: Elem): Camera =
-  result = Camera(
-    size: 1
-  )
-  if getUp[Renderer](owner).camera == nil:
-    getUp[Renderer](owner).camera = addr(result)
-
-proc regCamera(univ: Elem) =
-  discard
-
 proc initialize*(camera: ptr Camera, size: float) =
   camera.size = size
 
-
 # register Renderer with a given Univ
 proc regRenderer*(univ: Elem) =
-  register[Camera](univ, newCamera, regCamera)
-  after(getComp[TimestepMgr](univ).evTick, renderer_tick)
+  register[Renderer](
+    univ,
+    proc (owner: Elem): Renderer =
+      result = Renderer(
+        evDraw: newEvent[proc (univ: Elem, ren: ptr Renderer)](),
+        camera: nil
+      )
+    ,
+    proc (owner: Elem) =
+      register[Camera](
+        univ,
+        proc (owner: Elem): Camera =
+          result = Camera(
+            size: 1
+          )
+          if getUp[Renderer](owner).camera == nil:
+            getUp[Renderer](owner).camera = addr(result)
+        ,
+        proc (owner: Elem) =
+          discard
+      )
+      after(getComp[TimestepMgr](univ).evTick, proc (univ: Elem, dt: float) =
+        for renderer in mItems[Renderer](univ):
+          renderer.ren.setDrawColor(0, 0, 0, 255)
+          renderer.ren.clear()
+        
+          if renderer.camera == nil:
+            return
+          
+          renderer.camMatrix = renderer.camera.getMatrix(renderer)
+        
+          for ev in renderer.evDraw:
+            let (p, _) = ev
+            p(renderer.internalUniv, renderer)
+        
+          renderer.ren.present()
+      )
+  )
