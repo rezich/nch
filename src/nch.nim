@@ -89,6 +89,31 @@ type
 # singleton container for the entire engine
 var nch* = Nch(root: nil)
 
+
+#[
+  Easy: function(x, target, speed, snap) {
+    if (speed === undefined)
+      speed = 0.1;
+    var ret = x + (target - x) * speed;
+    if (snap === undefined)
+      snap = 0.001;
+    if (Math.abs(x - target) <= snap)
+      ret = target;
+    return ret;
+  },
+]#
+
+proc ease(x: var float, target: float, speed: float = 0.1, snap: float = 0.01) =
+  x = x + (target - x) * speed
+  if (abs(x - target)) <= snap:
+    x = target
+
+proc pluralize(n: int, singular, plural: string): string =
+  if n == 1:
+    singular
+  else:
+    plural
+
 proc nilCompRef*(): CompRef =
   CompRef(
     empty: true
@@ -103,9 +128,6 @@ proc getTransform*(elem: Elem): Matrix2d =
 
 proc globalPos*(elem: Elem): Vector2d =
   point2d(0, 0) & elem.getTransform
-
-proc globalScale*(elem: Elem): Vector2d =
-  vector2d(1, 1) & elem.getTransform
 
 # subscribe a proc to an Event
 proc before*[T](event: Event[T], procedure: T) =
@@ -427,6 +449,7 @@ type
   
   PlayerController = object of Comp
     font: VecFont
+    score*: int
   
   Bullet = object of Comp
     velocity: Vector2d
@@ -445,9 +468,12 @@ proc regBullet*(univ: Elem) =
         velocity: vector2d(0.1, 0)
       )
       on(getComp[CircleCollider](owner).evCollision, proc (a, b: ptr Collider) =
-        if (b.owner.name != "bullet"):
+        if (b.owner.name == "enemy"):
           a.owner.destroy()
           b.owner.destroy()
+          inc getComp[PlayerController](a.owner.parent.elems["player"]).score
+          let score = getComp[PlayerController](a.owner.parent.elems["player"]).score
+          getComp[VecText](a.owner.parent.elems["score"]).text = $score & " " & pluralize(score, "POINT ", "POINTS")
       )
     ,
     proc (owner: Elem) =
@@ -465,7 +491,8 @@ proc regPlayerController*(univ: Elem) =
     univ,
     proc (owner: Elem): PlayerController =
       result = PlayerController(
-        font: vecFont("sys")
+        font: vecFont("sys"),
+        score: 0
       )
       on(getComp[CircleCollider](owner).evCollision, proc (a, b: ptr Collider) =
         b.owner.destroy()
@@ -480,21 +507,27 @@ proc regPlayerController*(univ: Elem) =
           let cam = getUp[Renderer](player.owner).camera
           #cam.owner.rot = sin(getTicks().float / 800.0) * DEG15 * 0.5
           #cam.size = 10 + sin(getTicks().float / 1000.0) * 2
-          owner.rot = sin(getTicks().float / 800.0) * DEG15
+          #owner.rot = sin(getTicks().float / 800.0) * DEG15
           if inputMgr.getInput(Input.up) == InputState.down:
-            owner.pos.y += speed
-          if inputMgr.getInput(Input.down) == InputState.down:
-            owner.pos.y -= speed
+            owner.pos.y = min(owner.pos.y + speed, 3.5)
+            ease(owner.rot, DEG30)
+          else:
+            if inputMgr.getInput(Input.down) == InputState.down:
+              owner.pos.y = max(owner.pos.y - speed, -3.5)
+              ease(owner.rot, -DEG30)
+            else:
+              ease(owner.rot, 0)
           if inputMgr.getInput(Input.action) == InputState.pressed:
             var bullet = owner.parent.add("bullet")
             attach[VecText](bullet).initialize("O")
             bullet.pos = owner.pos + vector2d(1.5, 0)
+            bullet.scale = vector2d(0.5, 0.5)
             attach[CircleCollider](bullet)
             attach[Bullet](bullet)
       )
       on(getComp[Renderer](univ).evDraw, proc (univ: Elem, ren: ptr Renderer) =
         for comp in mitems[PlayerController](univ):
-          ren.drawString(comp.owner.getTransform, "@", comp.font, vector2d(1, 1), vector2d(0.2, 0.2), TextAlign.center, 0)
+          ren.drawString(comp.owner.getTransform, "@", comp.font, color(255, 255, 255, 255), vector2d(1, 1), vector2d(0.2, 0.2), TextAlign.center, 0)
       )
   )
 
@@ -521,7 +554,7 @@ when isMainModule:
   regInputMgr[Input](app)
   regRenderer(app)
 
-  attach[Renderer](app).initialize(1024, 768)
+  attach[Renderer](app).initialize(320, 240)
   attach[InputMgr[Input]](app).initialize(toInput)
 
   regBullet(app)
@@ -541,19 +574,27 @@ when isMainModule:
   attach[PlayerController](p1)
   p1.pos = vector2d(-5, 0)
 
-  var obst = world.add("obstacle")
+  var obst = world.add("enemy")
   attach[CircleCollider](obst)
   attach[VecText](obst).initialize("#")
   obst.pos = vector2d(5, 3)
 
-  obst = world.add("obstacle")
+  obst = world.add("enemy")
   attach[CircleCollider](obst)
   attach[VecText](obst).initialize("#")
   obst.pos = vector2d(5, 0)
 
-  obst = world.add("obstacle")
+  obst = world.add("enemy")
   attach[CircleCollider](obst)
   attach[VecText](obst).initialize("#")
   obst.pos = vector2d(5, -3)
+
+  var score = world.add("score")
+  attach[VecText](score).initialize("0 POINTS", color(255, 255, 255, 255), TextAlign.center, vector2d(0.6, 0.4), vector2d(0.2, 0.2))
+  score.pos = vector2d(0, 4.5)
+
+  var url = world.add("url")
+  attach[VecText](url).initialize("https://github.com/rezich/nch", color(127, 127, 127, 255), TextAlign.center, vector2d(0.35, 0.4), vector2d(0.1, 0.2))
+  url.pos = vector2d(0, -4.5)
 
   getComp[TimestepMgr](app).initialize()

@@ -96,9 +96,9 @@ proc drawCircle*(renderer: ptr Renderer, trans: Matrix2d, radius: float, color: 
   var pos = renderer.worldToScreen(point2d(0, 0) & trans)
   var radpos = renderer.worldToScreen((polar(point2d(0, 0) & trans, 0.0, radius)).toVector2d())
   var radius = (radpos.x - pos.x).float
-  renderer.ren.circleRGBA(pos.x.int16, pos.y.int16, radius.int16, color.r.uint8, color.g.uint8, color.b.uint8, color.a.uint8)
+  renderer.ren.filledCircleRGBA(pos.x.int16, pos.y.int16, radius.int16, color.r.uint8, color.g.uint8, color.b.uint8, color.a.uint8)
 
-proc drawChar*(renderer: ptr Renderer, pos: Vector2d, c: char, font: VecFont, scale: Vector2d, slant: float = 0) {.deprecated.} =
+proc drawChar*(renderer: ptr Renderer, pos: Vector2d, c: char, font: VecFont, color: Color, scale: Vector2d, slant: float = 0) {.deprecated.} =
   renderer.ren.setDrawColor(255, 255, 255, 255)
   let glyph = font[c]
   var lastPoint = Vector2d()
@@ -114,8 +114,8 @@ proc drawChar*(renderer: ptr Renderer, pos: Vector2d, c: char, font: VecFont, sc
     lastPoint.x = stroke.front.x
     lastPoint.y = stroke.front.y
 
-proc drawChar*(renderer: ptr Renderer, trans: Matrix2d, c: char, font: VecFont, scale: Vector2d, slant: float = 0) =
-  renderer.ren.setDrawColor(255, 255, 255, 255)
+proc drawChar*(renderer: ptr Renderer, trans: Matrix2d, c: char, font: VecFont, color: Color, scale: Vector2d, slant: float = 0) =
+  renderer.ren.setDrawColor(color.r, color.g, color.b, color.a)
   let glyph = font[c]
   var lastPoint = Vector2d()
   for stroke in glyph.strokes:
@@ -132,7 +132,7 @@ proc drawChar*(renderer: ptr Renderer, trans: Matrix2d, c: char, font: VecFont, 
 
 type TextAlign* {.pure.} = enum left, center, right
 
-proc drawString*(renderer: ptr Renderer, trans: Matrix2d, str: string, font: VecFont, scale: Vector2d, spacing: Vector2d, textAlign: TextAlign, slant: float = 0) =
+proc drawString*(renderer: ptr Renderer, trans: Matrix2d, str: string, font: VecFont, color: Color, scale: Vector2d, spacing: Vector2d, textAlign: TextAlign, slant: float = 0) =
   var i = 0
   var trans = trans
   
@@ -144,11 +144,11 @@ proc drawString*(renderer: ptr Renderer, trans: Matrix2d, str: string, font: Vec
   of TextAlign.right:
     trans = move(vector2d(-(str.len.float - 1) * (scale.x + spacing.x), 0) - vector2d(scale.x * 0.5, 0)) & trans
   while i < str.len:
-    renderer.drawChar(trans, str[i], font, scale, slant)
+    renderer.drawChar(trans, str[i], font, color, scale, slant)
     trans = move(vector2d(1, 0) * (scale + spacing)) & trans
     i += 1
 
-proc drawString*(renderer: ptr Renderer, pos: Vector2d, str: string, font: VecFont, scale: Vector2d, spacing: Vector2d, textAlign: TextAlign, slant: float = 0) {.deprecated.} =
+proc drawString*(renderer: ptr Renderer, pos: Vector2d, str: string, font: VecFont, color: Color, scale: Vector2d, spacing: Vector2d, textAlign: TextAlign, slant: float = 0) {.deprecated.} =
   var i = 0
   var pos = pos
   case textAlign
@@ -159,17 +159,18 @@ proc drawString*(renderer: ptr Renderer, pos: Vector2d, str: string, font: VecFo
   of TextAlign.right:
     pos -= vector2d((str.len.float - 1) * (scale.x + spacing.x), 0) + vector2d(scale.x * 0.5, 0)
   while i < str.len:
-    renderer.drawChar(pos, str[i], font, scale, slant)
+    renderer.drawChar(pos, str[i], font, color, scale, slant)
     pos = pos + vector2d(1, 0) * (scale + spacing)
     i += 1
 
 type VecText* = object of Comp
   font: VecFont #TODO: load this separately somewhere!
-  text: string
+  text*: string
   textAlign: TextAlign
   scale: Vector2d
   spacing: Vector2d
   slant: float
+  color: Color
 
 proc regVecText*(univ: Elem) =
   register[VecText](
@@ -181,19 +182,21 @@ proc regVecText*(univ: Elem) =
         textAlign: TextAlign.center,
         scale: vector2d(1, 1),
         spacing: vector2d(0, 0),
-        slant: 0.0
+        slant: 0.0,
+        color: color(255, 255, 255, 255)
       )
     ,
     proc (owner: Elem) =
       on(getComp[Renderer](univ).evDraw, proc (univ: Elem, ren: ptr Renderer) =
         for comp in mitems[VecText](univ):
-          ren.drawString(comp.owner.getTransform(), comp.text, comp.font, comp.scale, comp.spacing, comp.textAlign, comp.slant)
+          ren.drawString(comp.owner.getTransform(), comp.text, comp.font, comp.color, comp.scale, comp.spacing, comp.textAlign, comp.slant)
       )
   )
 
-proc initialize*(vt: var VecText, text: string, textAlign: TextAlign = TextAlign.center, scale: Vector2d = vector2d(1, 1), spacing: Vector2d = vector2d(0, 0), slant: float = 0) =
+proc initialize*(vt: var VecText, text: string, color: Color = color(255, 255, 255, 255), textAlign: TextAlign = TextAlign.center, scale: Vector2d = vector2d(1, 1), spacing: Vector2d = vector2d(0, 0), slant: float = 0) =
   vt.text = text
   vt.textAlign = textAlign
   vt.scale = scale
   vt.spacing = spacing
   vt.slant = slant
+  vt.color = color

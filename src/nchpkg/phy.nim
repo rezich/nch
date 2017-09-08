@@ -35,7 +35,7 @@ proc initialize*(col: ptr AABBCollider, scale: Vector2d = vector2d(1, 1)) =
   col.scale = scale
 
 proc testCollision(a, b: ptr CircleCollider) =
-  if sqrDist(a.owner.globalPos, b.owner.globalPos) <= pow(a.radius + b.radius, 2):
+  if sqrDist(a.owner.globalPos, b.owner.globalPos) <= pow(a.radius * min(a.owner.scale.x, a.owner.scale.y) + b.radius * min(b.owner.scale.x, b.owner.scale.y), 2):
     for ev in a.evCollision:
       let (p, _) = ev
       p(a, b)
@@ -96,10 +96,10 @@ proc regCollisionRealm*(univ: Elem) =
               if a of AABBCollider and b of AABBCollider:
                 testCollision(cast[ptr AABBCollider](a), cast[ptr AABBCollider](b))
       )
-      after(getComp[Renderer](univ).evDraw, proc (univ: Elem, renderer: ptr Renderer) =
+      before(getComp[Renderer](univ).evDraw, proc (univ: Elem, renderer: ptr Renderer) =
         for realm in mitems[CollisionRealm](univ):
           for circ in mitems[CircleCollider](realm.owner):
-            renderer.drawCircle(circ.owner.getTransform(), circ.radius, color(255, 0, 0, 255))
+            discard#renderer.drawCircle(circ.owner.getTransform(), circ.radius * min(circ.owner.scale.x, circ.owner.scale.y), color(0, 255, 0, 127))
           for aabb in mitems[AABBCollider](realm.owner):
             discard #TODO
       )
