@@ -59,30 +59,12 @@ iterator mitems(realm: ptr CollisionRealm): ptr Collider =
   for i in mitems[AABBCollider](realm.owner):
     yield i
 
-proc regCollisionRealm*(univ: Elem) =
-  register[CollisionRealm](
-    univ,
-    proc (owner: Elem): CollisionRealm =
-      register[CircleCollider](
-        owner,
-        proc (owner: Elem): CircleCollider =
-          CircleCollider(
-            evCollision: newEvent[proc (a, b: ptr Collider)](),
-            radius: 0.5
-          )
-      )
-      register[AABBCollider](
-        owner,
-        proc (owner: Elem): AABBCollider =
-          AABBCollider(
-            scale: vector2d(1, 1)
-          )
-      )
-      CollisionRealm()
-    ,
-    proc (owner: Elem) =
-      after(getComp[TimestepMgr](univ).evTick, proc (univ: Elem, dt: float) =
-        for realm in mitems[CollisionRealm](univ):
+proc regCollisionRealm*(elem: ptr Elem) =
+  register[CollisionRealm](elem, CompReg[CollisionRealm](
+    perPage: 8,
+    onReg: proc (owner: ptr Elem) =
+      after(getComp[TimestepMgr](elem).evTick, proc (elem: ptr Elem, dt: float) =
+        for realm in mitems[CollisionRealm](elem):
           for a in realm.mitems:
             for b in realm.mitems:
               if a == b:
@@ -96,11 +78,31 @@ proc regCollisionRealm*(univ: Elem) =
               if a of AABBCollider and b of AABBCollider:
                 testCollision(cast[ptr AABBCollider](a), cast[ptr AABBCollider](b))
       )
-      before(getComp[Renderer](univ).evDraw, proc (univ: Elem, renderer: ptr Renderer) =
-        for realm in mitems[CollisionRealm](univ):
+      before(getComp[Renderer](elem).evDraw, proc (elem: ptr Elem, renderer: ptr Renderer) =
+        for realm in mitems[CollisionRealm](elem):
           for circ in mitems[CircleCollider](realm.owner):
             discard#renderer.drawCircle(circ.owner.getTransform(), circ.radius * min(circ.owner.scale.x, circ.owner.scale.y), color(0, 255, 0, 127))
           for aabb in mitems[AABBCollider](realm.owner):
             discard #TODO
       )
-  )
+    ,
+    onNew: proc (owner: ptr Elem): CollisionRealm =
+      register[CircleCollider](owner, CompReg[CircleCollider](
+        perPage: 4192,
+        onReg: nil,
+        onNew: proc (owner: ptr Elem): CircleCollider =
+          CircleCollider(
+            evCollision: newEvent[proc (a, b: ptr Collider)](),
+            radius: 0.5
+          )
+      ))
+      register[AABBCollider](owner, CompReg[AABBCollider](
+        perPage: 4192,
+        onReg: nil,
+        onNew: proc (owner: ptr Elem): AABBCollider =
+          AABBCollider(
+            scale: vector2d(1, 1)
+          )
+      ))
+      CollisionRealm()
+  ))

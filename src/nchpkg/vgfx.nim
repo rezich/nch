@@ -172,11 +172,17 @@ type VecText* = object of Comp
   slant: float
   color: Color
 
-proc regVecText*(univ: Elem) =
-  register[VecText](
-    univ,
-    proc (owner: Elem): VecText =
-      result = VecText(
+proc regVecText*(elem: ptr Elem) =
+  register[VecText](elem, CompReg[VecText](
+    perPage: 2048,
+    onReg: proc (owner: ptr Elem) =
+      on(getUpComp[Renderer](elem).evDraw, proc (elem: ptr Elem, ren: ptr Renderer) =
+        for comp in mitems[VecText](elem):
+          ren.drawString(comp.owner.getTransform(), comp.text, comp.font, comp.color, comp.scale, comp.spacing, comp.textAlign, comp.slant)
+      )
+    ,
+    onNew: proc (owner: ptr Elem): VecText =
+      VecText(
         font: vecFont("sys"), #TODO: load this separately!
         text: "VecString",
         textAlign: TextAlign.center,
@@ -185,13 +191,7 @@ proc regVecText*(univ: Elem) =
         slant: 0.0,
         color: color(255, 255, 255, 255)
       )
-    ,
-    proc (owner: Elem) =
-      on(getComp[Renderer](univ).evDraw, proc (univ: Elem, ren: ptr Renderer) =
-        for comp in mitems[VecText](univ):
-          ren.drawString(comp.owner.getTransform(), comp.text, comp.font, comp.color, comp.scale, comp.spacing, comp.textAlign, comp.slant)
-      )
-  )
+  ))
 
 proc initialize*(vt: var VecText, text: string, color: Color = color(255, 255, 255, 255), textAlign: TextAlign = TextAlign.center, scale: Vector2d = vector2d(1, 1), spacing: Vector2d = vector2d(0, 0), slant: float = 0) =
   vt.text = text

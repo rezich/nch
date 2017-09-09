@@ -19,27 +19,25 @@ import
 type
   TimestepMgr* = object of Comp
     fpsman: FpsManager
-    evTick*: nch.Event[proc (univ: Elem, dt: float)]
+    evTick*: nch.Event[proc (elem: ptr Elem, dt: float)]
 
-proc regTimestepMgr*(univ: Elem) =
-  register[TimestepMgr](
-    univ,
-    proc (owner: Elem): TimestepMgr =
+proc regTimestepMgr*(elem: ptr Elem) =
+  register[TimestepMgr](elem, CompReg[TimestepMgr](
+    perPage: 2,
+    onReg: nil,
+    onNew: proc (owner: ptr Elem): TimestepMgr =
       result = TimestepMgr(
-        evTick: newEvent[proc (univ: Elem, dt: float)]()
+        evTick: newEvent[proc (elem: ptr Elem, dt: float)]()
       )
-    ,
-    proc (owner: Elem) =
-      discard
-  )
+  ))
 
 # initialize a given TimestepMgr
 proc initialize*(mgr: var TimestepMgr) =
-  while not mgr.univ.internalDestroying:
+  while not mgr.owner.getRoot.destroying:
     for ev in mgr.evTick:
       let (p, _) = ev
-      p(mgr.internalUniv, 0.0)
-    mgr.univ.cleanup()
+      p(mgr.owner.getRoot, 0.0)
+    mgr.owner.getRoot.cleanup()
 
 
 ### InputMgr - handles user input ###
@@ -52,22 +50,18 @@ type
   # button state enumeration
   InputState* {.pure.} = enum up, pressed, down, released
 
-proc regInputMgr*[T: enum](univ: Elem) =
-  register[InputMgr[T]](
-    univ,
-    proc (owner: Elem): InputMgr[T] =
-      result = InputMgr[T]()
-      result.initComp(owner)
-    ,
-    proc (owner: Elem) =
-      before(getComp[TimestepMgr](univ).evTick, proc (univ: Elem, dt: float) =
-        for mgr in mitems[InputMgr[T]](univ):
+proc regInputMgr*[T: enum](elem: ptr Elem) =
+  register[InputMgr[T]](elem, CompReg[InputMgr[T]](
+    perPage: 2,
+    onReg: proc (elem: ptr Elem) =
+      before(getComp[TimestepMgr](elem).evTick, proc (elem: ptr Elem, dt: float) =
+        for mgr in mitems[InputMgr[T]](elem):
           shallowCopy(mgr.inputLast, mgr.input)
           var event = defaultEvent
           while pollEvent(event):
             case event.kind
             of QuitEvent:
-              mgr.internalUniv.destroy()
+              mgr.owner.getRoot.destroy()
               discard
             of KeyDown:
               mgr.input[mgr.handler(event.key.keysym.scancode)] = true
@@ -76,7 +70,10 @@ proc regInputMgr*[T: enum](univ: Elem) =
             else:
               discard
       )
-  )
+    ,
+    onNew: proc (owner: ptr Elem): InputMgr[T] =
+      InputMgr[T]()
+  ))
 
 # initialize a given InputMgr
 proc initialize*[T: enum](mgr: var InputMgr[T], handler: proc (key: Scancode): T) =
@@ -97,7 +94,7 @@ type
   Renderer* = object of Comp
     ren*: RendererPtr
     win: WindowPtr
-    evDraw*: nch.Event[proc (univ: Elem, ren: ptr Renderer)]
+    evDraw*: nch.Event[proc (elem: ptr Elem, ren: ptr Renderer)]
     width: int
     height: int
     center: Point
@@ -123,7 +120,7 @@ proc initialize*(renderer: var Renderer, width: int, height: int) =
   sdlFailIf(not setHint("SDL_RENDER_SCALE_QUALITY", "0")):
     "Point texture filtering could not be enabled"
 
-  renderer.win = createWindow(title = renderer.internalUniv.name,
+  renderer.win = createWindow(title = renderer.owner.getRoot.name,
     x = SDL_WINDOWPOS_CENTERED, y = SDL_WINDOWPOS_CENTERED,
     w = width.cint, h = height.cint, flags = SDL_WINDOW_SHOWN)
   sdlFailIf renderer.win.isNil: "Window could not be created"
@@ -150,30 +147,21 @@ proc initialize*(camera: ptr Camera, size: float) =
   camera.size = size
 
 # register Renderer with a given Univ
-proc regRenderer*(univ: Elem) =
-  register[Renderer](
-    univ,
-    proc (owner: Elem): Renderer =
-      result = Renderer(
-        evDraw: newEvent[proc (univ: Elem, ren: ptr Renderer)](),
-        camera: nil
-      )
-    ,
-    proc (owner: Elem) =
-      register[Camera](
-        univ,
-        proc (owner: Elem): Camera =
+proc regRenderer*(elem: ptr Elem) =
+  register[Renderer](elem, CompReg[Renderer](
+    perPage: 2,
+    onReg: proc (elem: ptr Elem) =
+      register[Camera](elem, CompReg[Camera](
+        perPage: 64,
+        onNew: proc (owner: ptr Elem): Camera =
           result = Camera(
             size: 1
           )
-          if getUp[Renderer](owner).camera == nil:
-            getUp[Renderer](owner).camera = addr(result)
-        ,
-        proc (owner: Elem) =
-          discard
-      )
-      after(getComp[TimestepMgr](univ).evTick, proc (univ: Elem, dt: float) =
-        for renderer in mItems[Renderer](univ):
+          if getUpComp[Renderer](owner).camera == nil:
+            getUpComp[Renderer](owner).camera = addr(result)
+      ))
+      after(getUpComp[TimestepMgr](elem).evTick, proc (elem: ptr Elem, dt: float) =
+        for renderer in mItems[Renderer](elem):
           renderer.ren.setDrawColor(0, 0, 0, 255)
           renderer.ren.clear()
         
@@ -184,8 +172,14 @@ proc regRenderer*(univ: Elem) =
         
           for ev in renderer.evDraw:
             let (p, _) = ev
-            p(renderer.internalUniv, renderer)
+            p(renderer.owner.getRoot, renderer)
         
           renderer.ren.present()
       )
-  )
+    ,
+    onNew: proc (owner: ptr Elem): Renderer =
+      result = Renderer(
+        evDraw: newEvent[proc (elem: ptr Elem, ren: ptr Renderer)](),
+        camera: nil
+      )
+  ))

@@ -1,5 +1,3 @@
-# nch #
-
 import
   tables,
   typetraits,
@@ -22,14 +20,14 @@ converter toVector2d*(x: Point): Vector2d = vector2d(x.x.float, x.y.float)
 type
   Node* = object of RootObj
     name*: string
-    destroying*: bool
-  CompRegBase* = object of RootObj
+    destroying: bool
+  CompRegBase = object of RootObj
     perPage*: int
     vacancies: seq[int]
     last*: int
     pages*: seq[pointer]
     size*: uint
-  CompReg*[T] = object of CompRegBase
+  CompReg[T] = object of CompRegBase
     onReg*: proc (elem: ptr Elem)
     onNew*: proc (owner: ptr Elem): T
   Comp* = object of Node
@@ -42,7 +40,7 @@ type
     empty: bool
     compPtr: ptr Comp
     compReg: ptr CompRegBase
-  Event*[T: proc] = ref object of RootObj
+  Event[T: proc] = ref object of RootObj
     before*: seq[(T, CompRef)]
     on*: seq[(T, CompRef)]
     after*: seq[(T, CompRef)]
@@ -63,7 +61,7 @@ type
 
 var nch* = Nch(root: nil)
 
-proc getRoot*(elem: ptr Elem): ptr Elem =
+proc getRoot(elem: ptr Elem): ptr Elem =
   result = elem
   while result.parent != nil:
     result = elem.parent
@@ -134,26 +132,24 @@ proc getChild*(elem: ptr Elem, search: string): ptr Elem =
 
 proc getUpCompReg*[T: Comp](elem: ptr Elem): ptr CompReg[T] =
   let name = typedesc[T].name
-  var parent = elem
+  var parent = elem.parent
   while parent != nil:
     if name in parent.compRegs:
       return cast[ptr CompReg[T]](addr(parent.compRegs[name]))
     parent = parent.parent
   echo "EXCEPTION: " & name & " isn't registered up the hierarchy of " & elem.name
-  writeStackTrace()
   return nil
 
 proc getUpElem*(elem: ptr Elem): Elem =
   discard
 
-proc getInstance[T: Comp](compReg: ptr CompReg[T], index: int): ptr T =
+proc getInstance[T: Comp](compReg: CompReg[T], index: int): ptr T =
   cast[ptr T](cast[uint](compReg.pages[index div compReg.perPage]) + compReg.size * (index mod compReg.perPage).uint)
 
 proc getCompReg[T: Comp](elem: ptr Elem): ptr CompReg[T] =
   let name = typedesc[T].name
   if name notin elem.compRegs:
     echo "EXCEPTION: " & name & " isn't registered in " & elem.name
-    writeStackTrace()
     nil
   else:
     cast[ptr CompReg[T]](addr(elem.compRegs[name]))
@@ -171,10 +167,7 @@ proc register*[T: Comp](elem: ptr Elem, compReg: CompReg[T]) =
   if name in elem.compRegs:
     echo "EXCEPTION: " & name & " is already registered in " & elem.name
     return
-  echo "REGISTERING " & name & " in " & elem.name
-  elem.compRegs[name] = CompReg[T]()
-  elem.compRegs[name].size = sizeof(T).uint
-  elem.compRegs[name].perPage = compReg.perPage
+  elem.compRegs[name] = compReg
   elem.compRegs[name].vacancies = @[]
   elem.compRegs[name].last = -1
   elem.compRegs[name].pages = @[]
@@ -220,7 +213,6 @@ proc attach*[T: Comp](owner: ptr Elem): ptr T {.discardable.} =
   let upCompReg = getUpCompReg[T](owner)
   if upCompReg == nil:
     echo "EXCEPTION: " & name & " isn't registered up the hierarchy of " & owner.name
-    writeStackTrace()
   (result, index) = allocComp[T](upCompReg, owner)
   owner.comps[name] = CompRef(
     name: name,
@@ -269,11 +261,9 @@ proc getComp*[T: Comp](owner: ptr Elem): ptr T =
   let upCompReg = getUpCompReg[T](owner)
   if upCompReg == nil:
     echo "EXCEPTION: " & name & " isn't registered up the hierarchy of " & owner.name
-    writeStackTrace()
     return nil
   if name notin owner.comps:
     echo "EXCEPTION: " & name & " isn't attached to " & owner.name
-    writeStackTrace()
     return nil
   return getInstance[T](upCompReg, owner.comps[name].index)
 
@@ -289,7 +279,6 @@ proc getUpComp*[T: Comp](elem: ptr Elem): ptr T =
       parent = parent.parent
   if result == nil:
     echo "EXCEPTION: " & name & "not found up the hierarchy of " & elem.name
-    writeStackTrace()
 
 proc destroy*(elem: ptr Elem) =
   #TODO: make sure all of this works!!
@@ -331,7 +320,6 @@ iterator mitems*[T: Comp](elem: ptr Elem): ptr T =
   let name = typedesc[T].name
   if name notin elem.compRegs:
     echo "EXCEPTION: " & name & " isn't registered in " & elem.name
-    writeStackTrace()
   var compReg = cast[ptr CompReg[T]](addr elem.compRegs[name])
   if compReg.last > -1:
     for i in 0..compReg.last:
@@ -346,166 +334,28 @@ iterator siblings*(elem: var ptr Elem): ptr Elem =
     yield e.next
     e = e.next
 
+type MyComp* = object of Comp
+  moreThings: int
 
-### DEMO ###
-import
-  nchpkg/sys,
-  nchpkg/phy,
-  nchpkg/vgfx
+var app = makeRoot("nch test app")
+var world = app.add("world")
+register[MyComp](app, CompReg[MyComp](
+  perPage: 2,
+  onReg: proc (elem: ptr Elem) =
+    echo "onReg!"
+  ,
+  onNew: proc (owner: ptr Elem): MyComp =
+    echo "onNew!"
+    MyComp(moreThings: 87)
+))
 
+attach[MyComp](world)
 
-type
-  # input definitions for InputMgr
-  Input {.pure.} = enum none, up, down, left, right, action, restart, quit
-  
-  PlayerController = object of Comp
-    font: VecFont
-    score*: int
-  
-  Bullet = object of Comp
-    velocity: Vector2d
-  
-  Enemy = object of Comp
+for i in mitems[MyComp](app):
+  echo i.owner.name
 
-proc newEnemy*(owner: Elem): Enemy =
-  result = Enemy()
+echo getComp[MyComp](world).moreThings
 
+world.destroy()
 
-proc regBullet*(elem: ptr Elem) =
-  register[Bullet](elem, CompReg[Bullet](
-    perPage: 2048,
-    onReg: proc (elem: ptr Elem) =
-      on(getComp[TimestepMgr](elem).evTick, proc (elem: ptr Elem, dt: float) =
-        for bullet in mitems[Bullet](elem):
-          bullet.owner.pos += bullet.velocity
-          bullet.owner.rot -= 0.1
-          if bullet.owner.pos.x > 8:
-            bullet.owner.destroy()
-      )
-    ,
-    onNew: proc (owner: ptr Elem): Bullet =
-      result = Bullet(
-        velocity: vector2d(0.1, 0)
-      )
-      on(getComp[CircleCollider](owner).evCollision, proc (a, b: ptr Collider) =
-        if (b.owner.name == "enemy"):
-          a.owner.destroy()
-          b.owner.destroy()
-          inc getComp[PlayerController](a.owner.parent.children["player"]).score
-          let score = getComp[PlayerController](a.owner.parent.children["player"]).score
-          getComp[VecText](a.owner.parent.children["score"]).text = $score & " " & pluralize(score, "POINT ", "POINTS")
-      )
-  ))
-
-proc regPlayerController*(elem: ptr Elem) =
-  register[PlayerController](elem, CompReg[PlayerController](
-    perPage: 2,
-    onReg: proc (elem: ptr Elem) =
-      on(getComp[TimestepMgr](elem).evTick, proc (elem: ptr Elem, dt: float) =
-        for player in mitems[PlayerController](elem):
-          let inputMgr = getUpComp[InputMgr[Input]](player.owner)
-          let owner = player.owner
-          let speed = 0.1
-          let cam = getUpComp[Renderer](player.owner).camera
-          #cam.owner.rot = sin(getTicks().float / 800.0) * DEG15 * 0.5
-          #cam.size = 10 + sin(getTicks().float / 1000.0) * 2
-          #owner.rot = sin(getTicks().float / 800.0) * DEG15
-          if inputMgr.getInput(Input.up) == InputState.down:
-            owner.pos.y = min(owner.pos.y + speed, 3.5)
-            ease(owner.rot, DEG30)
-          else:
-            if inputMgr.getInput(Input.down) == InputState.down:
-              owner.pos.y = max(owner.pos.y - speed, -3.5)
-              ease(owner.rot, -DEG30)
-            else:
-              ease(owner.rot, 0)
-          if inputMgr.getInput(Input.action) == InputState.pressed:
-            var bullet = owner.parent.add("bullet")
-            attach[VecText](bullet).initialize("O")
-            bullet.pos = owner.pos + vector2d(0.5, 0)
-            bullet.scale = vector2d(0.5, 0.5)
-            attach[CircleCollider](bullet)
-            attach[Bullet](bullet)
-      )
-      on(getComp[Renderer](elem).evDraw, proc (elem: ptr Elem, ren: ptr Renderer) =
-        for comp in mitems[PlayerController](elem):
-          ren.drawString(comp.owner.getTransform, "@", comp.font, color(255, 255, 255, 255), vector2d(1, 1), vector2d(0.2, 0.2), TextAlign.center, 0)
-      )
-    ,
-    onNew: proc (owner: ptr Elem): PlayerController =
-      result = PlayerController(
-        font: vecFont("sys"),
-        score: 0
-      )
-      on(getComp[CircleCollider](owner).evCollision, proc (a, b: ptr Collider) =
-        if b.owner.name != "bullet":
-          b.owner.destroy()
-      )
-  ))
-
-# convert input scancodes into an Input
-proc toInput*(key: Scancode): Input =
-  case key
-  of SDL_SCANCODE_UP: Input.up
-  of SDL_SCANCODE_DOWN: Input.down
-  of SDL_SCANCODE_LEFT: Input.left
-  of SDL_SCANCODE_RIGHT: Input.right
-  of SDL_SCANCODE_ESCAPE: Input.quit
-  of SDL_SCANCODE_SPACE: Input.action
-  else: Input.none
-
-# tests
-when isMainModule:
-  var app = makeRoot("nch test app")
-  var world = app.add("world")
-
-  regTimestepMgr(app)
-  attach[TimestepMgr](app)
-
-  regInputMgr[Input](app)
-  regRenderer(app)
-
-  attach[Renderer](app).initialize(320, 240)
-  attach[InputMgr[Input]](app).initialize(toInput)
-
-  regBullet(app)
-  regPlayerController(app)
-
-  regVecText(app)
-  regCollisionRealm(app)
-
-  attach[CollisionRealm](world)
-
-  var cam = app.add("mainCam")
-  attach[Camera](cam).initialize(10)
-  cam.pos = vector2d(0, 0)
-
-  var p1 = world.add("player")
-  attach[CircleCollider](p1)
-  attach[PlayerController](p1)
-  p1.pos = vector2d(-5, 0)
-
-  var obst = world.add("enemy")
-  attach[CircleCollider](obst)
-  attach[VecText](obst).initialize("#")
-  obst.pos = vector2d(5, 3)
-
-  obst = world.add("enemy")
-  attach[CircleCollider](obst)
-  attach[VecText](obst).initialize("#")
-  obst.pos = vector2d(5, 0)
-
-  obst = world.add("enemy")
-  attach[CircleCollider](obst)
-  attach[VecText](obst).initialize("#")
-  obst.pos = vector2d(5, -3)
-
-  var score = world.add("score")
-  attach[VecText](score).initialize("0 POINTS", color(255, 255, 255, 255), TextAlign.center, vector2d(0.6, 0.4), vector2d(0.2, 0.2))
-  score.pos = vector2d(0, 4.5)
-
-  var url = world.add("url")
-  attach[VecText](url).initialize("https://github.com/rezich/nch", color(127, 127, 127, 255), TextAlign.center, vector2d(0.35, 0.4), vector2d(0.1, 0.2))
-  url.pos = vector2d(0, -4.5)
-
-  getComp[TimestepMgr](app).initialize()
+app.cleanup()
