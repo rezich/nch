@@ -83,9 +83,10 @@ proc vecFont*(name: string): VecFont =
 proc `[]`(font: VecFont, c: char): VecGlyph =
   font.glyphs[ord(c)]
 
-proc drawLine*(renderer: ptr Renderer, back, front: Vector2d) =
+proc drawLine*(renderer: ptr Renderer, back, front: Vector2d, color: Color = color(255, 255, 255, 255)) =
   var p1 = renderer.worldToScreen(back)
   var p2 = renderer.worldToScreen(front)
+  renderer.ren.setDrawColor(color)
   renderer.ren.drawLine(p1.x, p1.y, p2.x, p2.y)
 
 proc drawCircle*(renderer: ptr Renderer, pos: Vector2d, radius: float, color: Color) {.deprecated.} =
@@ -98,24 +99,8 @@ proc drawCircle*(renderer: ptr Renderer, trans: Matrix2d, radius: float, color: 
   var radius = (radpos.x - pos.x).float
   renderer.ren.filledCircleRGBA(pos.x.int16, pos.y.int16, radius.int16, color.r.uint8, color.g.uint8, color.b.uint8, color.a.uint8)
 
-proc drawChar*(renderer: ptr Renderer, pos: Vector2d, c: char, font: VecFont, color: Color, scale: Vector2d, slant: float = 0) {.deprecated.} =
-  renderer.ren.setDrawColor(255, 255, 255, 255)
-  let glyph = font[c]
-  var lastPoint = Vector2d()
-  for stroke in glyph.strokes:
-    var frontPoint = pos + vector2d(stroke.front.x + stroke.front.y * slant, stroke.front.y) * scale * 0.5
-    var backPoint: Vector2d
-    if stroke.continueFromPrevious:
-      backPoint = pos + vector2d(lastPoint.x + lastPoint.y * slant, lastPoint.y) * scale * 0.5
-    else:
-      backPoint = pos + vector2d(stroke.back.x + stroke.back.y * slant, stroke.back.y) * scale * 0.5
-
-    renderer.drawLine(backPoint, frontPoint)
-    lastPoint.x = stroke.front.x
-    lastPoint.y = stroke.front.y
-
 proc drawChar*(renderer: ptr Renderer, trans: Matrix2d, c: char, font: VecFont, color: Color, scale: Vector2d, slant: float = 0) =
-  renderer.ren.setDrawColor(color.r, color.g, color.b, color.a)
+  renderer.ren.setDrawColor(color)
   let glyph = font[c]
   var lastPoint = Vector2d()
   for stroke in glyph.strokes:
@@ -126,7 +111,7 @@ proc drawChar*(renderer: ptr Renderer, trans: Matrix2d, c: char, font: VecFont, 
     else:
       backPoint = (vector2d(stroke.back.x + stroke.back.y * slant, stroke.back.y) * scale * 0.5).toPoint2d & trans
 
-    renderer.drawLine(backPoint, frontPoint)
+    renderer.drawLine(backPoint, frontPoint, color)
     lastPoint.x = stroke.front.x
     lastPoint.y = stroke.front.y
 
@@ -148,21 +133,6 @@ proc drawString*(renderer: ptr Renderer, trans: Matrix2d, str: string, font: Vec
     trans = move(vector2d(1, 0) * (scale + spacing)) & trans
     i += 1
 
-proc drawString*(renderer: ptr Renderer, pos: Vector2d, str: string, font: VecFont, color: Color, scale: Vector2d, spacing: Vector2d, textAlign: TextAlign, slant: float = 0) {.deprecated.} =
-  var i = 0
-  var pos = pos
-  case textAlign
-  of TextAlign.left:
-    pos += vector2d(scale.x * 0.5, 0)
-  of TextAlign.center:
-    pos -= vector2d((str.len.float - 1) * (scale.x + spacing.x) * 0.5, 0)
-  of TextAlign.right:
-    pos -= vector2d((str.len.float - 1) * (scale.x + spacing.x), 0) + vector2d(scale.x * 0.5, 0)
-  while i < str.len:
-    renderer.drawChar(pos, str[i], font, color, scale, slant)
-    pos = pos + vector2d(1, 0) * (scale + spacing)
-    i += 1
-
 type VecText* = object of Comp
   font: VecFont #TODO: load this separately somewhere!
   text*: string
@@ -170,12 +140,12 @@ type VecText* = object of Comp
   scale: Vector2d
   spacing: Vector2d
   slant: float
-  color: Color
+  color*: Color
 
 proc regVecText*(elem: ptr Elem) =
   register[VecText](elem, CompReg[VecText](
     perPage: 2048,
-    onReg: proc (owner: ptr Elem) =
+    onReg: proc (elem: ptr Elem) =
       on(getUpComp[Renderer](elem).evDraw, proc (elem: ptr Elem, ren: ptr Renderer) =
         for comp in mitems[VecText](elem):
           ren.drawString(comp.owner.getTransform(), comp.text, comp.font, comp.color, comp.scale, comp.spacing, comp.textAlign, comp.slant)
@@ -193,10 +163,58 @@ proc regVecText*(elem: ptr Elem) =
       )
   ))
 
-proc initialize*(vt: var VecText, text: string, color: Color = color(255, 255, 255, 255), textAlign: TextAlign = TextAlign.center, scale: Vector2d = vector2d(1, 1), spacing: Vector2d = vector2d(0, 0), slant: float = 0) =
+proc initialize*(vt: ptr VecText, text: string, color: Color = color(255, 255, 255, 255), textAlign: TextAlign = TextAlign.center, scale: Vector2d = vector2d(1, 1), spacing: Vector2d = vector2d(0, 0), slant: float = 0) =
   vt.text = text
   vt.textAlign = textAlign
   vt.scale = scale
   vt.spacing = spacing
   vt.slant = slant
   vt.color = color
+
+type
+  VecPart* = object of RootObj
+    pos: Vector2d
+    rot: float
+    len: float
+    speed: float
+    color: Color
+  
+  VecPartEmitter* = object of Comp
+    parts: seq[VecPart]
+    tickProc: proc (emitter: ptr VecPartEmitter, part: ptr VecPart)
+  
+proc regVecPartEmitter*(elem: ptr Elem) =
+  register[VecPartEmitter](elem, CompReg[VecPartEmitter](
+    perPage: 2048,
+    onReg: proc (elem: ptr Elem) =
+      on(getUpComp[TimestepMgr](elem).evTick, proc (elem: ptr Elem, dt: float) =
+        for comp in mitems[VecPartEmitter](elem):
+          for part in comp.parts.mitems:
+            part.pos = polar(part.pos, part.rot, part.speed)
+      )
+      on(getUpComp[Renderer](elem).evDraw, proc (elem: ptr Elem, ren: ptr Renderer) =
+        for comp in mitems[VecPartEmitter](elem):
+          for part in comp.parts:
+            var origin = part.pos.toPoint2d & comp.owner.getTransform
+            ren.drawLine(origin, polar(origin, part.rot, part.len), part.color)
+      )
+    ,
+    onNew: proc (owner: ptr Elem): VecPartEmitter =
+      VecPartEmitter(
+        parts: @[]
+      )
+  ))
+
+proc initialize*(emitter: ptr VecPartEmitter, tickProc: proc (emitter: ptr VecPartEmitter, part: ptr VecPart)): ptr VecPartEmitter {.discardable.} =
+  emitter.tickProc = tickProc
+  emitter
+  
+proc emit*(emitter: ptr VecPartEmitter, num: int) =
+  for i in 0..num:
+    emitter.parts.add(VecPart(
+      pos: vector2d(0, 0),
+      rot: random(DEG360),
+      len: 0.5,
+      speed: 0.1,
+      color: color(255, 255, 255, 255)
+    ))

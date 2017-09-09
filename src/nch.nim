@@ -156,7 +156,7 @@ proc getCompReg[T: Comp](elem: ptr Elem): CompReg[T] =
     writeStackTrace()
     return nil
   else:
-    cast[ptr CompReg[T]](addr(elem.compRegs[name]))
+    cast[ptr CompReg[T]](elem.compRegs[name])
 
 proc addPage[T: Comp](compReg: CompReg[T]) =
   compReg.pages.add(alloc(sizeof(T) * compReg.perPage))
@@ -200,10 +200,10 @@ proc allocComp[T: Comp](compReg: CompReg[T], owner: ptr Elem): (ptr T, int) =
     index = compReg.last
   let subIndex = index mod compReg.perPage
   let page = index div compReg.perPage
-  echo "allocating " & name & "#" & $index
-  echo "  (page " & $page & ", index " & $subIndex & ")"
+  echo "  allocating " & name & "#" & $index
+  echo "    (page " & $page & ", index " & $subIndex & ")"
   while page > compReg.pages.high:
-    echo "    (adding new page)"
+    echo "      (adding new page)"
     addPage[T](compReg)
   let instance = getInstance[T](compReg, index)
   if compReg.onNew != nil:
@@ -382,7 +382,7 @@ proc regBullet*(elem: ptr Elem) =
         for bullet in mitems[Bullet](elem):
           bullet.owner.pos += bullet.velocity
           bullet.owner.rot -= 0.1
-          if bullet.owner.pos.x > 8:
+          if bullet.owner.pos.x > 12:
             bullet.owner.destroy()
       )
     ,
@@ -392,6 +392,11 @@ proc regBullet*(elem: ptr Elem) =
       )
       on(getComp[CircleCollider](owner).evCollision, proc (a, b: ptr Collider) =
         if (b.owner.name == "enemy"):
+          var explosion = a.owner.parent.add("explosion")
+          explosion.pos = a.owner.pos
+          attach[VecPartEmitter](explosion).initialize(proc (emitter: ptr VecPartEmitter, part: ptr VecPart) =
+            discard
+          ).emit(10)
           a.owner.destroy()
           b.owner.destroy()
           inc getComp[PlayerController](a.owner.parent.children["player"]).score
@@ -410,8 +415,8 @@ proc regPlayerController*(elem: ptr Elem) =
           let owner = player.owner
           let speed = 0.1
           let cam = getUpComp[Renderer](player.owner).camera
-          #cam.owner.rot = sin(getTicks().float / 800.0) * DEG15 * 0.5
-          #cam.size = 10 + sin(getTicks().float / 1000.0) * 2
+          cam.owner.rot = sin(getTicks().float / 800.0) * DEG15 * 0.25
+          cam.size = 12 + sin(getTicks().float / 1000.0) * 2
           #owner.rot = sin(getTicks().float / 800.0) * DEG15
           if inputMgr.getInput(Input.up) == InputState.down:
             owner.pos.y = min(owner.pos.y + speed, 3.5)
@@ -468,8 +473,10 @@ when isMainModule:
   regInputMgr[Input](app)
   regRenderer(app)
 
-  attach[Renderer](app).initialize(1024,768)
+  attach[Renderer](app).initialize(320, 240)
   attach[InputMgr[Input]](app).initialize(toInput)
+
+  regVecPartEmitter(app)
 
   regBullet(app)
   regPlayerController(app)

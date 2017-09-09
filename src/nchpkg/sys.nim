@@ -32,7 +32,7 @@ proc regTimestepMgr*(elem: ptr Elem) =
   ))
 
 # initialize a given TimestepMgr
-proc initialize*(mgr: var TimestepMgr) =
+proc initialize*(mgr: ptr TimestepMgr) =
   while not mgr.owner.getRoot.destroying:
     for ev in mgr.evTick:
       let (p, _) = ev
@@ -76,7 +76,7 @@ proc regInputMgr*[T: enum](elem: ptr Elem) =
   ))
 
 # initialize a given InputMgr
-proc initialize*[T: enum](mgr: var InputMgr[T], handler: proc (key: Scancode): T) =
+proc initialize*[T: enum](mgr: ptr InputMgr[T], handler: proc (key: Scancode): T) =
   mgr.handler = handler
 
 # get the current state of a given input
@@ -114,7 +114,7 @@ template sdlFailIf(cond: typed, reason: string) =
     reason & ", SDL error: " & $getError())
 
 # initialize a given Renderer instance
-proc initialize*(renderer: var Renderer, width: int, height: int) =
+proc initialize*(renderer: ptr Renderer, width: int, height: int) =
   sdlFailIf(not sdl2.init(INIT_VIDEO or INIT_TIMER or INIT_EVENTS)):
     "SDL2 initialization failed"
   sdlFailIf(not setHint("SDL_RENDER_SCALE_QUALITY", "0")):
