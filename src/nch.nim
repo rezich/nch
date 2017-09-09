@@ -23,13 +23,13 @@ type
   Node* = object of RootObj
     name*: string
     destroying*: bool
-  CompRegBase* = object of RootObj
+  CompRegBase* = ref object of RootObj
     perPage*: int
     vacancies: seq[int]
     last*: int
     pages*: seq[pointer]
     size*: uint
-  CompReg*[T] = object of CompRegBase
+  CompReg*[T] = ref object of CompRegBase
     onReg*: proc (elem: ptr Elem)
     onNew*: proc (owner: ptr Elem): T
   Comp* = object of Node
@@ -41,7 +41,7 @@ type
     index: int
     empty: bool
     compPtr: ptr Comp
-    compReg: ptr CompRegBase
+    compReg: CompRegBase
   Event*[T: proc] = ref object of RootObj
     before*: seq[(T, CompRef)]
     on*: seq[(T, CompRef)]
@@ -66,7 +66,7 @@ var nch* = Nch(root: nil)
 proc getRoot*(elem: ptr Elem): ptr Elem =
   result = elem
   while result.parent != nil:
-    result = elem.parent
+    result = result.parent
 
 proc ease*(x: var float, target: float, speed: float = 0.1, snap: float = 0.01) =
   x = x + (target - x) * speed
@@ -132,12 +132,12 @@ proc getChild*(elem: ptr Elem, search: string): ptr Elem =
     return nil
   cast[ptr Elem](elem.children[name])
 
-proc getUpCompReg*[T: Comp](elem: ptr Elem): ptr CompReg[T] =
+proc getUpCompReg*[T: Comp](elem: ptr Elem): CompReg[T] =
   let name = typedesc[T].name
   var parent = elem
   while parent != nil:
-    if name in parent.compRegs:
-      return cast[ptr CompReg[T]](addr(parent.compRegs[name]))
+    if parent.compRegs != nil and name in parent.compRegs:
+      return cast[CompReg[T]](parent.compRegs[name])
     parent = parent.parent
   echo "EXCEPTION: " & name & " isn't registered up the hierarchy of " & elem.name
   writeStackTrace()
@@ -146,20 +146,20 @@ proc getUpCompReg*[T: Comp](elem: ptr Elem): ptr CompReg[T] =
 proc getUpElem*(elem: ptr Elem): Elem =
   discard
 
-proc getInstance[T: Comp](compReg: ptr CompReg[T], index: int): ptr T =
+proc getInstance[T: Comp](compReg: CompReg[T], index: int): ptr T =
   cast[ptr T](cast[uint](compReg.pages[index div compReg.perPage]) + compReg.size * (index mod compReg.perPage).uint)
 
-proc getCompReg[T: Comp](elem: ptr Elem): ptr CompReg[T] =
+proc getCompReg[T: Comp](elem: ptr Elem): CompReg[T] =
   let name = typedesc[T].name
   if name notin elem.compRegs:
     echo "EXCEPTION: " & name & " isn't registered in " & elem.name
     writeStackTrace()
-    nil
+    return nil
   else:
     cast[ptr CompReg[T]](addr(elem.compRegs[name]))
 
-proc addPage[T: Comp](compReg: ptr CompReg[T]) =
-  compReg.pages.add(alloc(sizeof(pointer) + sizeof(T) * compReg.perPage))
+proc addPage[T: Comp](compReg: CompReg[T]) =
+  compReg.pages.add(alloc(sizeof(T) * compReg.perPage))
   var page = compReg.pages[compReg.pages.high]
   for i in 0..compReg.perPage:
     cast[ptr T](cast[uint](page) + compReg.size.uint * i.uint)[] = T(active: false)
@@ -184,13 +184,13 @@ proc register*[T: Comp](elem: ptr Elem, compReg: CompReg[T]) =
   if compReg.onReg != nil:
     newCompReg.onReg = compReg.onReg
 
-  addPage[T](cast[ptr CompReg[T]](addr(elem.compRegs[name])))
+  addPage[T](cast[CompReg[T]](elem.compRegs[name]))
 
   if newCompReg.onReg != nil:
     newCompReg.onReg(elem)
 
 
-proc allocComp[T: Comp](compReg: ptr CompReg[T], owner: ptr Elem): (ptr T, int) =
+proc allocComp[T: Comp](compReg: CompReg[T], owner: ptr Elem): (ptr T, int) =
   let name = typedesc[T].name
   var index: int
   if compReg.vacancies.len > 0:
@@ -221,6 +221,7 @@ proc attach*[T: Comp](owner: ptr Elem): ptr T {.discardable.} =
   if upCompReg == nil:
     echo "EXCEPTION: " & name & " isn't registered up the hierarchy of " & owner.name
     writeStackTrace()
+  echo "ATTACHING " & name & " to " & owner.name
   (result, index) = allocComp[T](upCompReg, owner)
   owner.comps[name] = CompRef(
     name: name,
@@ -247,6 +248,7 @@ proc makeRoot*(name: string): ptr Elem =
   result = cast[ptr Elem](alloc(sizeof(Elem)))
   result.name = name
   initElem(result)
+  result.parent = nil
   result.destroyingElems = @[]
 
 proc add*(parent: var ptr Elem, name: string): ptr Elem {.discardable.} =
@@ -281,22 +283,23 @@ proc getUpComp*[T: Comp](elem: ptr Elem): ptr T =
   #TODO: cache!
   result = nil
   let name = typedesc[T].name
-  var parent = elem.parent
+  var parent = elem
   while parent != nil and result == nil:
     if name in parent.comps:
       result = cast[ptr T](getComp[T](parent))
     else:
       parent = parent.parent
   if result == nil:
-    echo "EXCEPTION: " & name & "not found up the hierarchy of " & elem.name
+    echo "EXCEPTION: " & name & " not found up the hierarchy of " & elem.name
     writeStackTrace()
 
 proc destroy*(elem: ptr Elem) =
   #TODO: make sure all of this works!!
   elem.destroying = true
-  for child in elem.children.mvalues:
+  for child in elem.children.values:
     child.destroy()
   elem.getRoot.destroyingElems.add(elem)
+  
   for compRef in elem.comps.values:
     var comp = cast[ptr Comp](cast[uint](compRef.compReg.pages[compRef.index div compRef.compReg.perPage]) + compRef.compReg.size * (compRef.index mod compRef.compReg.perPage).uint)
     comp.destroying = true
@@ -332,7 +335,7 @@ iterator mitems*[T: Comp](elem: ptr Elem): ptr T =
   if name notin elem.compRegs:
     echo "EXCEPTION: " & name & " isn't registered in " & elem.name
     writeStackTrace()
-  var compReg = cast[ptr CompReg[T]](addr elem.compRegs[name])
+  var compReg = cast[CompReg[T]](elem.compRegs[name])
   if compReg.last > -1:
     for i in 0..compReg.last:
       let instance = getInstance[T](compReg, i)
@@ -465,7 +468,7 @@ when isMainModule:
   regInputMgr[Input](app)
   regRenderer(app)
 
-  attach[Renderer](app).initialize(320, 240)
+  attach[Renderer](app).initialize(1024,768)
   attach[InputMgr[Input]](app).initialize(toInput)
 
   regBullet(app)
