@@ -13,6 +13,7 @@ import
 
 {.experimental.}
 
+converter toPoint2d*(x: Point): Point2d = point2d(x.x.float, x.y.float)
 converter toPoint2d*(x: Vector2d): Point2d = point2d(x.x, x.y)
 converter toPoint*(x: Vector2d): Point = point(x.x.cint, x.y.cint)
 converter toPoint*(x: Point2d): Point = point(x.x.cint, x.y.cint)
@@ -56,7 +57,7 @@ type
     prev: ptr Elem
     next: ptr Elem
     last: ptr Elem
-    compRegs*: OrderedTableRef[string, CompRegBase]
+    compRegs: OrderedTableRef[string, CompRegBase]
     destroyingElems: seq[ptr Elem]
   Nch* = object of RootObj
     root*: ptr Elem
@@ -251,7 +252,7 @@ proc makeRoot*(name: string): ptr Elem =
   result.parent = nil
   result.destroyingElems = @[]
 
-proc add*(parent: var ptr Elem, name: string): ptr Elem {.discardable.} =
+proc add*(parent: ptr Elem, name: string): ptr Elem {.discardable.} =
   result = cast[ptr Elem](alloc(sizeof(Elem)))
   result.name = name
   initElem(result, parent)
@@ -380,7 +381,7 @@ proc regBullet*(elem: ptr Elem) =
     onReg: proc (elem: ptr Elem) =
       on(getComp[TimestepMgr](elem).evTick, proc (elem: ptr Elem, dt: float) =
         for bullet in mitems[Bullet](elem):
-          bullet.owner.pos += bullet.velocity
+          bullet.owner.pos += bullet.velocity * dt
           bullet.owner.rot -= 0.1
           if bullet.owner.pos.x > 12:
             bullet.owner.destroy()
@@ -388,7 +389,7 @@ proc regBullet*(elem: ptr Elem) =
     ,
     onNew: proc (owner: ptr Elem): Bullet =
       result = Bullet(
-        velocity: vector2d(0.1, 0)
+        velocity: vector2d(5, 0)
       )
       on(getComp[CircleCollider](owner).evCollision, proc (a, b: ptr Collider) =
         if (b.owner.name == "enemy"):
@@ -411,20 +412,22 @@ proc regPlayerController*(elem: ptr Elem) =
     onReg: proc (elem: ptr Elem) =
       on(getComp[TimestepMgr](elem).evTick, proc (elem: ptr Elem, dt: float) =
         for player in mitems[PlayerController](elem):
+          let timestepMgr = getUpComp[TimestepMgr](player.owner)
           let inputMgr = getUpComp[InputMgr[Input]](player.owner)
           let owner = player.owner
-          let speed = 0.1
+          let speed = 5.0
+          let rotSpeed = 6.0
           let cam = getUpComp[Renderer](player.owner).camera
-          cam.owner.rot = sin(getTicks().float / 800.0) * DEG15 * 0.25
-          cam.size = 12 + sin(getTicks().float / 1000.0) * 2
+          #cam.owner.rot = sin(timestepMgr.fpsman.getFramecount().float / 800.0) * DEG15 * 8 * dt
+          #cam.size = 12 + sin(getTicks().float / 1000.0) * 2 * dt
           #owner.rot = sin(getTicks().float / 800.0) * DEG15
           if inputMgr.getInput(Input.up) == InputState.down:
-            owner.pos.y = min(owner.pos.y + speed, 3.5)
-            ease(owner.rot, DEG30)
+            owner.pos.y = min(owner.pos.y + speed * dt, 3.5)
+            ease(owner.rot, DEG30, rotSpeed * dt)
           else:
             if inputMgr.getInput(Input.down) == InputState.down:
-              owner.pos.y = max(owner.pos.y - speed, -3.5)
-              ease(owner.rot, -DEG30)
+              owner.pos.y = max(owner.pos.y - speed * dt, -3.5)
+              ease(owner.rot, -DEG30, rotSpeed * dt)
             else:
               ease(owner.rot, 0)
           if inputMgr.getInput(Input.action) == InputState.pressed:
@@ -473,7 +476,7 @@ when isMainModule:
   regInputMgr[Input](app)
   regRenderer(app)
 
-  attach[Renderer](app).initialize(320, 240)
+  attach[Renderer](app).initialize(1024, 768).setScreenMode(ScreenMode.windowed)
   attach[InputMgr[Input]](app).initialize(toInput)
 
   regVecPartEmitter(app)

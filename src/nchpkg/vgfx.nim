@@ -83,21 +83,25 @@ proc vecFont*(name: string): VecFont =
 proc `[]`(font: VecFont, c: char): VecGlyph =
   font.glyphs[ord(c)]
 
-proc drawLine*(renderer: ptr Renderer, back, front: Vector2d, color: Color = color(255, 255, 255, 255)) =
+proc drawLine*(renderer: ptr Renderer, back, front: Vector2d, color: Color = color(255, 255, 255, 255), width: int = 1) =
   var p1 = renderer.worldToScreen(back)
   var p2 = renderer.worldToScreen(front)
-  renderer.ren.setDrawColor(color)
-  renderer.ren.drawLine(p1.x, p1.y, p2.x, p2.y)
+  #renderer.ren.setDrawColor(color)
+  #renderer.ren.drawLine(p1.x, p1.y, p2.x, p2.y)
+  if width == 1:
+    renderer.ren.aalineRGBA(p1.x.int16, p1.y.int16, p2.x.int16, p2.y.int16, color.r, color.g, color.b, color.a)
+  else:
+    renderer.ren.thickLineRGBA(p1.x.int16, p1.y.int16, p2.x.int16, p2.y.int16, width.uint8, color.r, color.g, color.b, color.a)
 
 proc drawCircle*(renderer: ptr Renderer, pos: Vector2d, radius: float, color: Color) {.deprecated.} =
   var pos = renderer.worldToScreen(pos)
-  renderer.ren.circleRGBA(pos.x.int16, pos.y.int16, radius.int16, color.r.uint8, color.g.uint8, color.b.uint8, color.a.uint8)
+  renderer.ren.aacircleRGBA(pos.x.int16, pos.y.int16, radius.int16, color.r.uint8, color.g.uint8, color.b.uint8, color.a.uint8)
 
 proc drawCircle*(renderer: ptr Renderer, trans: Matrix2d, radius: float, color: Color) =
   var pos = renderer.worldToScreen(point2d(0, 0) & trans)
   var radpos = renderer.worldToScreen((polar(point2d(0, 0) & trans, 0.0, radius)).toVector2d())
   var radius = (radpos.x - pos.x).float
-  renderer.ren.filledCircleRGBA(pos.x.int16, pos.y.int16, radius.int16, color.r.uint8, color.g.uint8, color.b.uint8, color.a.uint8)
+  renderer.ren.circleRGBA(pos.x.int16, pos.y.int16, radius.int16, color.r.uint8, color.g.uint8, color.b.uint8, color.a.uint8)
 
 proc drawChar*(renderer: ptr Renderer, trans: Matrix2d, c: char, font: VecFont, color: Color, scale: Vector2d, slant: float = 0) =
   renderer.ren.setDrawColor(color)
@@ -201,7 +205,8 @@ proc regVecPartEmitter*(elem: ptr Elem) =
     ,
     onNew: proc (owner: ptr Elem): VecPartEmitter =
       VecPartEmitter(
-        parts: @[]
+        parts: @[],
+        ticKProc: nil
       )
   ))
 

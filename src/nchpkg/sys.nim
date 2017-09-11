@@ -18,7 +18,7 @@ import
 ### TimestepMgr - attempts to execute tick events at a given framerate  ###
 type
   TimestepMgr* = object of Comp
-    fpsman: FpsManager
+    fpsman*: FpsManager
     evTick*: nch.Event[proc (elem: ptr Elem, dt: float)]
 
 proc regTimestepMgr*(elem: ptr Elem) =
@@ -27,17 +27,22 @@ proc regTimestepMgr*(elem: ptr Elem) =
     onReg: nil,
     onNew: proc (owner: ptr Elem): TimestepMgr =
       result = TimestepMgr(
-        evTick: newEvent[proc (elem: ptr Elem, dt: float)]()
+        evTick: newEvent[proc (elem: ptr Elem, dt: float)](),
+        fpsman: FpsManager()
       )
+      result.fpsman.init()
+      result.fpsman.setFramerate(60)
   ))
 
 # initialize a given TimestepMgr
 proc initialize*(mgr: ptr TimestepMgr) =
+  var dt = 0.0
   while not mgr.owner.getRoot.destroying:
     for ev in mgr.evTick:
       let (p, _) = ev
-      p(mgr.owner.getRoot, 0.0)
+      p(mgr.owner.getRoot, dt)
     mgr.owner.getRoot.cleanup()
+    dt = mgr.fpsman.delay.float / 1000
 
 
 ### InputMgr - handles user input ###
@@ -88,6 +93,8 @@ proc getInput*[T: enum](mgr: var InputMgr[T], input: T): InputState =
 
 ### Renderer - SDL-based graphical renderer ###
 type
+  ScreenMode* {.pure.} = enum windowed, full, borderless
+
   Camera* = object of Comp
     size*: float
 
@@ -114,7 +121,7 @@ template sdlFailIf(cond: typed, reason: string) =
     reason & ", SDL error: " & $getError())
 
 # initialize a given Renderer instance
-proc initialize*(renderer: ptr Renderer, width: int, height: int) =
+proc initialize*(renderer: ptr Renderer, width: int, height: int): ptr Renderer {.discardable.} =
   sdlFailIf(not sdl2.init(INIT_VIDEO or INIT_TIMER or INIT_EVENTS)):
     "SDL2 initialization failed"
   sdlFailIf(not setHint("SDL_RENDER_SCALE_QUALITY", "0")):
@@ -130,8 +137,18 @@ proc initialize*(renderer: ptr Renderer, width: int, height: int) =
   renderer.center = point(width / 2, height / 2)
 
   renderer.ren = renderer.win.createRenderer(index = -1,
-    flags = Renderer_Accelerated or Renderer_PresentVsync)
+    flags = Renderer_Accelerated#[ or Renderer_PresentVsync]#)
   sdlFailIf renderer.ren.isNil: "Renderer could not be created"
+  
+  discard showCursor(false)
+
+  renderer
+
+proc setScreenMode*(renderer: ptr Renderer, mode: ScreenMode) =
+  case mode
+  of ScreenMode.windowed: discard setFullscreen(renderer.win, 0)
+  of ScreenMode.full: discard setFullscreen(renderer.win, SDL_WINDOW_FULLSCREEN)
+  of ScreenMode.borderless: discard setFullscreen(renderer.win, SDL_WINDOW_FULLSCREEN_DESKTOP)
 
 proc getMatrix*(cam: ptr Camera, renderer: ptr Renderer): Matrix2d =
   #cam.owner.getTransform
