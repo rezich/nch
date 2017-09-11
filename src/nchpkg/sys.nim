@@ -36,14 +36,12 @@ proc regTimestepMgr*(elem: ptr Elem) =
 
 # initialize a given TimestepMgr
 proc initialize*(mgr: ptr TimestepMgr) =
-  var dt = 0.0
   while not mgr.owner.getRoot.destroying:
+    let dt = mgr.fpsman.delay.float / 1000
+    mgr.owner.getRoot.cleanup()
     for ev in mgr.evTick:
       let (p, _) = ev
       p(mgr.owner.getRoot, dt)
-    mgr.owner.getRoot.cleanup()
-    dt = mgr.fpsman.delay.float / 1000
-
 
 ### InputMgr - handles user input ###
 type

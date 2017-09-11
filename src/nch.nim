@@ -1,6 +1,7 @@
 # nch #
 
 import
+  macros,
   tables,
   typetraits,
   sequtils,
@@ -37,13 +38,13 @@ type
     active*: bool
     owner*: ptr Elem
     things*: int
-  CompRef* = object of RootObj
+  CompRef* = object
     name: string
     index: int
     empty: bool
     compPtr: ptr Comp
     compReg: CompRegBase
-  Event*[T: proc] = ref object of RootObj
+  Event*[T: proc] = ref object
     before*: seq[(T, CompRef)]
     on*: seq[(T, CompRef)]
     after*: seq[(T, CompRef)]
@@ -59,7 +60,7 @@ type
     last: ptr Elem
     compRegs: OrderedTableRef[string, CompRegBase]
     destroyingElems: seq[ptr Elem]
-  Nch* = object of RootObj
+  Nch* = object
     root*: ptr Elem
 
 var nch* = Nch(root: nil)
@@ -180,6 +181,7 @@ proc register*[T: Comp](elem: ptr Elem, compReg: CompReg[T]) =
   elem.compRegs[name].last = -1
   elem.compRegs[name].pages = @[]
   var newCompReg = cast[ptr CompReg[T]](addr(elem.compRegs[name]))
+  #GC_ref(newCompReg[])
   if compReg.onNew != nil:
     newCompReg.onNew = compReg.onNew
   if compReg.onReg != nil:
@@ -242,18 +244,18 @@ proc initElem(elem: ptr Elem, parent: ptr Elem = nil) =
   elem.prev = nil
   elem.next = nil
   elem.last = nil
-  elem.compRegs = nil
-  elem.destroyingElems = nil
+  #elem.compRegs = nil
+  #elem.destroyingElems = nil
 
 proc makeRoot*(name: string): ptr Elem =
-  result = cast[ptr Elem](alloc(sizeof(Elem)))
+  result = cast[ptr Elem](alloc0(sizeof(Elem)))
   result.name = name
   initElem(result)
   result.parent = nil
   result.destroyingElems = @[]
 
 proc add*(parent: ptr Elem, name: string): ptr Elem {.discardable.} =
-  result = cast[ptr Elem](alloc(sizeof(Elem)))
+  result = cast[ptr Elem](alloc0(sizeof(Elem)))
   result.name = name
   initElem(result, parent)
   if name in parent.children:
@@ -323,6 +325,9 @@ proc bury*(elem: ptr Elem) =
     comp.active = false
     comp.owner = nil
     compRef.compReg.vacancies.add(compRef.index)
+  if elem.compRegs != nil:
+    for compReg in elem.compRegs.values:
+      discard#GC_unref(compReg)
   elem.comps.clear()
   dealloc(elem)
 
@@ -350,7 +355,6 @@ iterator siblings*(elem: var ptr Elem): ptr Elem =
     yield e.next
     e = e.next
 
-
 ### DEMO ###
 import
   nchpkg/sys,
@@ -373,7 +377,6 @@ type
 
 proc newEnemy*(owner: Elem): Enemy =
   result = Enemy()
-
 
 proc regBullet*(elem: ptr Elem) =
   register[Bullet](elem, CompReg[Bullet](
@@ -465,10 +468,27 @@ proc toInput*(key: Scancode): Input =
   of SDL_SCANCODE_SPACE: Input.action
   else: Input.none
 
+
 # tests
 when isMainModule:
   var app = makeRoot("nch test app")
   var world = app.add("world")
+
+  # macro testbed
+  template compDef*(t, body: untyped): untyped =
+    block:
+      body
+
+  template onReg*(t, body: untyped): untyped =
+    block:
+      var p: proc (elem: ptr Elem) =
+        body
+
+  compDef(Bullet):
+    onReg(Bullet):
+      echo "hi"
+  
+  ###
 
   regTimestepMgr(app)
   attach[TimestepMgr](app)
