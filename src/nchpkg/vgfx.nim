@@ -47,7 +47,6 @@ proc vecFont*(name: string): VecFont =
   result = VecFont(
     name: name
   )
-
   var i = open(name & ".vfont")
   var num = 1
   for line in i.lines:
@@ -144,7 +143,7 @@ method setup(comp: var VecText) =
   comp.font = vecFont("sys") #TODO: load separately!
 
 define(VecText, proc (elem: Elem) =
-  on(getUpComp[Renderer](elem).evDraw, proc (elem: Elem, ren: ptr Renderer) =
+  on(getUpComp[Renderer](elem).evDraw, proc (elem: Elem, ren: ptr Renderer) = # OnDraw
     for comp in mitems[VecText](elem):
       ren.drawString(comp.owner.getTransform(), comp.text, comp.font, comp.color, comp.scale, comp.spacing, comp.textAlign, comp.slant)
   )
@@ -174,12 +173,12 @@ method setup(comp: var VecPartEmitter) =
   comp.parts = @[]
 
 define(VecPartEmitter, proc (elem: Elem) =
-  on(getUpComp[TimestepMgr](elem).evTick, proc (elem: Elem, dt: float) =
+  on(getUpComp[TimestepMgr](elem).evTick, proc (elem: Elem, dt: float) = # OnTick
     for comp in mitems[VecPartEmitter](elem):
       for part in comp.parts.mitems:
         part.pos = polar(part.pos, part.rot, part.speed)
   )
-  on(getUpComp[Renderer](elem).evDraw, proc (elem: Elem, ren: ptr Renderer) =
+  on(getUpComp[Renderer](elem).evDraw, proc (elem: Elem, ren: ptr Renderer) = # OnDraw
     for comp in mitems[VecPartEmitter](elem):
       for part in comp.parts:
         var origin = part.pos.toPoint2d & comp.owner.getTransform

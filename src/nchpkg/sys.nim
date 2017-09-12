@@ -17,6 +17,9 @@ import
   util
 
 export
+  basic2d,
+  math,
+  tables,
   util
 
 {.experimental.}

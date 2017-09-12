@@ -12,15 +12,16 @@ import
 
 ### TimestepMgr - attempts to execute tick events at a given framerate  ###
 type
+  OnTick* = proc (elem: Elem, dt: float) {.closure.}
   TimestepMgr* = object of Comp
     fpsman*: FpsManager
-    evTick*: sys.Event[proc (elem: Elem, dt: float)]
+    evTick*: sys.Event[OnTick]
     elapsed*: float
 
 define(TimestepMgr)
 
 method setup(comp: var TimestepMgr) =
-  comp.evTick = newEvent[proc (elem: Elem, dt: float)]()
+  comp.evTick = newEvent[OnTick]()
   comp.fpsman = FpsManager()
   comp.fpsman.init()
   comp.fpsman.setFramerate(60)
@@ -46,7 +47,7 @@ type
   InputState* {.pure.} = enum up, pressed, down, released
 
 define(InputMgr, proc (elem: Elem) =
-  before(getComp[TimestepMgr](elem).evTick, proc (elem: Elem, dt: float) =
+  before(getComp[TimestepMgr](elem).evTick, proc (elem: Elem, dt: float) = # OnTick
     for mgr in mitems[InputMgr](elem):
       shallowCopy(mgr.inputLast, mgr.input)
       var event = defaultEvent
@@ -82,10 +83,12 @@ type
   Camera* = object of Comp
     size*: float
 
+  OnDraw* = proc (elem: Elem, ren: ptr Renderer)
+
   Renderer* = object of Comp
     ren*: RendererPtr
     win: WindowPtr
-    evDraw*: sys.Event[proc (elem: Elem, ren: ptr Renderer)]
+    evDraw*: sys.Event[OnDraw]
     width*: int
     height*: int
     center: Point
@@ -105,7 +108,7 @@ template sdlFailIf(cond: typed, reason: string) =
     reason & ", SDL error: " & $getError())
 
 method setup(comp: var Renderer) =
-  comp.evDraw = newEvent[proc (elem: Elem, ren: ptr Renderer)]()
+  comp.evDraw = newEvent[OnDraw]()
   comp.camera = nil
   sdlFailIf(not sdl2.init(INIT_VIDEO or INIT_TIMER or INIT_EVENTS)):
     "SDL2 initialization failed"
@@ -151,7 +154,7 @@ method setup(comp: var Camera) =
 define(Camera)
 define(Renderer, proc (elem: Elem) =
   reg[Camera](elem, 16)
-  after(getUpComp[TimestepMgr](elem).evTick, proc (elem: Elem, dt: float) =
+  after(getUpComp[TimestepMgr](elem).evTick, proc (elem: Elem, dt: float) = # OnTick
     for renderer in mItems[Renderer](elem):
       renderer.ren.setDrawColor(0, 0, 0, 255)
       renderer.ren.clear()
