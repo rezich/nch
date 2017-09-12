@@ -3,16 +3,11 @@
 import
   macros,
   tables,
-  typetraits,
-  sequtils,
-  strutils,
-  future,
   sdl2,
   sdl2/gfx,
   basic2d,
   random,
-  math,
-  terminal
+  math
 
 {.experimental.}
 
@@ -23,61 +18,19 @@ import
   nchpkg/vgfx,
   nchpkg/util
 
-type
-  ThingDoer* = object of Comp
-    things: int
-  RigidBody* = object of Comp
-
-method setup(comp: var ThingDoer) =
-  discard#echo "setup for ThingDoer!"
-
-define(ThingDoer, proc (elem: Elem) =
-  discard
-)
-
-define(RigidBody, proc (elem: Elem) =
-  discard
-)
-
-
+type Input {.pure.} = enum none, up, down, left, right, action, restart, quit
 
 type
-  # input definitions for InputMgr
-  Input {.pure.} = enum none, up, down, left, right, action, restart, quit
-  
+  BulletCtrl = object of Comp
+    velocity: Vector2d
   PlayerCtrl = object of Comp
     font: VecFont
     score*: int
-  
-  BulletCtrl = object of Comp
-    velocity: Vector2d
-  
-  Enemy = object of Comp
+  EnemyCtrl = object of Comp
 
-method setup(comp: var PlayerCtrl) =
-  comp.font = vecFont("sys")
 
-method setup(comp: var BulletCtrl) =
-  comp.velocity = vector2d(5, 0)
-  on(getComp[CircleCollider](comp.owner).evCollision, proc (a, b: ptr Collider) =
-    if (b.owner.name == "enemy"):
-      a.owner.destroy()
-      b.owner.destroy()
-      inc getComp[PlayerCtrl](a.owner.parent.children["player"]).score
-      let score = getComp[PlayerCtrl](a.owner.parent.children["player"]).score
-      getComp[VecText](a.owner.parent.children["score"]).text = $score & " " & pluralize(score, "POINT ", "POINTS")
-  )
 
-define(BulletCtrl, proc (elem: Elem) =
-  on(getComp[TimestepMgr](elem).evTick, proc (elem: Elem, dt: float) =
-    for bullet in mitems[BulletCtrl](elem):
-      bullet.owner.pos += bullet.velocity * dt
-      bullet.owner.rot -= 0.1
-      if bullet.owner.pos.x > 12:
-        bullet.owner.destroy()
-  )
-)
-
+## PlayerCtrl
 define(PlayerCtrl, proc (elem: Elem) =
   on(getComp[TimestepMgr](elem).evTick, proc (elem: Elem, dt: float) =
     for player in mitems[PlayerCtrl](elem):
@@ -119,8 +72,35 @@ define(PlayerCtrl, proc (elem: Elem) =
       ren.drawString(comp.owner.getTransform, "@", comp.font, color(255, 255, 255, 255), vector2d(1, 1), vector2d(0.2, 0.2), TextAlign.center, 0)
   )
 )
+method setup(comp: var PlayerCtrl) =
+  comp.font = vecFont("sys")
 
 
+
+## BulletCtrl
+define(BulletCtrl, proc (elem: Elem) =
+  on(getComp[TimestepMgr](elem).evTick, proc (elem: Elem, dt: float) =
+    for bullet in mitems[BulletCtrl](elem):
+      bullet.owner.pos += bullet.velocity * dt
+      bullet.owner.rot -= 0.1
+      if bullet.owner.pos.x > 12:
+        bullet.owner.destroy()
+  )
+)
+method setup(comp: var BulletCtrl) =
+  comp.velocity = vector2d(5, 0)
+  on(getComp[CircleCollider](comp.owner).evCollision, proc (a, b: ptr Collider) =
+    if (b.owner.name == "enemy"):
+      a.owner.destroy()
+      b.owner.destroy()
+      inc getComp[PlayerCtrl](a.owner.parent.children["player"]).score
+      let score = getComp[PlayerCtrl](a.owner.parent.children["player"]).score
+      getComp[VecText](a.owner.parent.children["score"]).text = $score & " " & pluralize(score, "POINT ", "POINTS")
+  )
+
+
+
+## Main
 when isMainModule:
   var app = elem("nch test app")
 
@@ -130,7 +110,7 @@ when isMainModule:
   reg[Renderer](app, 1)
 
   app.attach(InputMgr())
-  app.attach(Renderer()).initialize(1024, 768)
+  app.attach(Renderer(width: 1024, height: 768))
 
   reg[VecText](app, 1024)
   reg[CollisionRealm](app, 8)

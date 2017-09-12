@@ -86,8 +86,8 @@ type
     ren*: RendererPtr
     win: WindowPtr
     evDraw*: sys.Event[proc (elem: Elem, ren: ptr Renderer)]
-    width: int
-    height: int
+    width*: int
+    height*: int
     center: Point
     camera*: ptr Camera
     camMatrix*: Matrix2d
@@ -104,29 +104,26 @@ template sdlFailIf(cond: typed, reason: string) =
   if cond: raise SDLException.newException(
     reason & ", SDL error: " & $getError())
 
-# initialize a given Renderer instance
-proc initialize*(renderer: ptr Renderer, width: int, height: int): ptr Renderer {.discardable.} =
+method setup(comp: var Renderer) =
+  comp.evDraw = newEvent[proc (elem: Elem, ren: ptr Renderer)]()
+  comp.camera = nil
   sdlFailIf(not sdl2.init(INIT_VIDEO or INIT_TIMER or INIT_EVENTS)):
     "SDL2 initialization failed"
   sdlFailIf(not setHint("SDL_RENDER_SCALE_QUALITY", "0")):
     "Point texture filtering could not be enabled"
 
-  renderer.win = createWindow(title = renderer.owner.getRoot.name,
+  comp.win = createWindow(title = comp.owner.getRoot.name,
     x = SDL_WINDOWPOS_CENTERED, y = SDL_WINDOWPOS_CENTERED,
-    w = width.cint, h = height.cint, flags = SDL_WINDOW_SHOWN)
-  sdlFailIf renderer.win.isNil: "Window could not be created"
+    w = comp.width.cint, h = comp.height.cint, flags = SDL_WINDOW_SHOWN)
+  sdlFailIf comp.win.isNil: "Window could not be created"
 
-  renderer.width = width
-  renderer.height = height
-  renderer.center = point(width / 2, height / 2)
+  comp.center = point(comp.width / 2, comp.height / 2)
 
-  renderer.ren = renderer.win.createRenderer(index = -1,
+  comp.ren = comp.win.createRenderer(index = -1,
     flags = Renderer_Accelerated#[ or Renderer_PresentVsync]#)
-  sdlFailIf renderer.ren.isNil: "Renderer could not be created"
-  
-  discard showCursor(false)
+  sdlFailIf comp.ren.isNil: "Renderer could not be created"
 
-  renderer
+  discard showCursor(false)
 
 proc setScreenMode*(renderer: ptr Renderer, mode: ScreenMode) =
   case mode
@@ -146,10 +143,6 @@ proc shutdown*(renderer: var Renderer) =
 
 proc initialize*(camera: ptr Camera, size: float) =
   camera.size = size
-
-method setup(comp: var Renderer) =
-  comp.evDraw = newEvent[proc (elem: Elem, ren: ptr Renderer)]()
-  comp.camera = nil
 
 method setup(comp: var Camera) =
   if getUpComp[Renderer](comp.owner).camera == nil:
