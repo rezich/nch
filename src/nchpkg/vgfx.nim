@@ -144,7 +144,7 @@ method setup(comp: var VecText) =
 
 define(VecText, proc (elem: Elem) =
   on(getUpComp[Renderer](elem).evDraw, proc (elem: Elem, ren: ptr Renderer) = # OnDraw
-    for comp in mitems[VecText](elem):
+    for comp in each[VecText](elem):
       ren.drawString(comp.owner.getTransform(), comp.text, comp.font, comp.color, comp.scale, comp.spacing, comp.textAlign, comp.slant)
   )
 )
@@ -174,12 +174,12 @@ method setup(comp: var VecPartEmitter) =
 
 define(VecPartEmitter, proc (elem: Elem) =
   on(getUpComp[TimestepMgr](elem).evTick, proc (elem: Elem, dt: float) = # OnTick
-    for comp in mitems[VecPartEmitter](elem):
+    for comp in each[VecPartEmitter](elem):
       for part in comp.parts.mitems:
         part.pos = polar(part.pos, part.rot, part.speed)
   )
   on(getUpComp[Renderer](elem).evDraw, proc (elem: Elem, ren: ptr Renderer) = # OnDraw
-    for comp in mitems[VecPartEmitter](elem):
+    for comp in each[VecPartEmitter](elem):
       for part in comp.parts:
         var origin = part.pos.toPoint2d & comp.owner.getTransform
         ren.drawLine(origin, polar(origin, part.rot, part.len), part.color)

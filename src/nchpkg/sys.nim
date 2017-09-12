@@ -335,7 +335,7 @@ iterator items*[T: proc](event: Event[T]): (T, CompRef) =
   for i in event.after:
     yield i
 
-iterator mitems*[T: Comp](elem: Elem): ptr T =
+iterator each*[T: Comp](elem: Elem): ptr T =
   let name = typedesc[T].name
   if name notin elem.compRegs:
     raise nchError(name & " isn't registered in " & elem.name)

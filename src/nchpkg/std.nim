@@ -48,7 +48,7 @@ type
 
 define(InputMgr, proc (elem: Elem) =
   before(getComp[TimestepMgr](elem).evTick, proc (elem: Elem, dt: float) = # OnTick
-    for mgr in mitems[InputMgr](elem):
+    for mgr in each[InputMgr](elem):
       shallowCopy(mgr.inputLast, mgr.input)
       var event = defaultEvent
       while pollEvent(event):
@@ -155,7 +155,7 @@ define(Camera)
 define(Renderer, proc (elem: Elem) =
   reg[Camera](elem, 16)
   after(getUpComp[TimestepMgr](elem).evTick, proc (elem: Elem, dt: float) = # OnTick
-    for renderer in mItems[Renderer](elem):
+    for renderer in each[Renderer](elem):
       renderer.ren.setDrawColor(0, 0, 0, 255)
       renderer.ren.clear()
     

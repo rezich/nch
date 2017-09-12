@@ -44,9 +44,9 @@ proc testCollision(a, b: ptr AABBCollider) =
 type CollisionRealm* = object of Comp
 
 iterator mitems(realm: ptr CollisionRealm): ptr Collider =
-  for i in mitems[CircleCollider](realm.owner):
+  for i in each[CircleCollider](realm.owner):
     yield i
-  for i in mitems[AABBCollider](realm.owner):
+  for i in each[AABBCollider](realm.owner):
     yield i
 
 method setup(comp: var CircleCollider) =
@@ -59,7 +59,7 @@ define(CircleCollider)
 define(AABBCollider)
 define(CollisionRealm, proc (elem: Elem) =
   after(getComp[TimestepMgr](elem).evTick, proc (elem: Elem, dt: float) =
-    for realm in mitems[CollisionRealm](elem):
+    for realm in each[CollisionRealm](elem):
       for a in realm.mitems:
         for b in realm.mitems:
           if a == b:
@@ -74,10 +74,10 @@ define(CollisionRealm, proc (elem: Elem) =
             testCollision(cast[ptr AABBCollider](a), cast[ptr AABBCollider](b))
   )
   before(getComp[Renderer](elem).evDraw, proc (elem: Elem, renderer: ptr Renderer) =
-    for realm in mitems[CollisionRealm](elem):
-      for circ in mitems[CircleCollider](realm.owner):
+    for realm in each[CollisionRealm](elem):
+      for circ in each[CircleCollider](realm.owner):
         discard#renderer.drawCircle(circ.owner.getTransform(), circ.radius * min(circ.owner.scale.x, circ.owner.scale.y), color(0, 255, 0, 127))
-      for aabb in mitems[AABBCollider](realm.owner):
+      for aabb in each[AABBCollider](realm.owner):
         discard #TODO
   )
 )
