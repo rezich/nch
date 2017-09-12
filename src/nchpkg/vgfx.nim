@@ -1,18 +1,12 @@
 # vector graphics
 
 import
-  ../nch,
+  std,
   sys
 
 import
-  tables,
-  typetraits,
-  sequtils,
-  future,
   sdl2,
   sdl2/gfx,
-  sdl2/image,
-  sdl2/ttf,
   basic2d,
   random,
   math,
@@ -140,32 +134,21 @@ proc drawString*(renderer: ptr Renderer, trans: Matrix2d, str: string, font: Vec
 type VecText* = object of Comp
   font: VecFont #TODO: load this separately somewhere!
   text*: string
-  textAlign: TextAlign
-  scale: Vector2d
-  spacing: Vector2d
-  slant: float
+  textAlign*: TextAlign
+  scale*: Vector2d
+  spacing*: Vector2d
+  slant*: float
   color*: Color
 
-proc regVecText*(elem: ptr Elem) =
-  register[VecText](elem, CompReg[VecText](
-    perPage: 2048,
-    onReg: proc (elem: ptr Elem) =
-      on(getUpComp[Renderer](elem).evDraw, proc (elem: ptr Elem, ren: ptr Renderer) =
-        for comp in mitems[VecText](elem):
-          ren.drawString(comp.owner.getTransform(), comp.text, comp.font, comp.color, comp.scale, comp.spacing, comp.textAlign, comp.slant)
-      )
-    ,
-    onNew: proc (owner: ptr Elem): VecText =
-      VecText(
-        font: vecFont("sys"), #TODO: load this separately!
-        text: "VecString",
-        textAlign: TextAlign.center,
-        scale: vector2d(1, 1),
-        spacing: vector2d(0, 0),
-        slant: 0.0,
-        color: color(255, 255, 255, 255)
-      )
-  ))
+method setup(comp: var VecText) =
+  comp.font = vecFont("sys") #TODO: load separately!
+
+define(VecText, proc (elem: Elem) =
+  on(getUpComp[Renderer](elem).evDraw, proc (elem: Elem, ren: ptr Renderer) =
+    for comp in mitems[VecText](elem):
+      ren.drawString(comp.owner.getTransform(), comp.text, comp.font, comp.color, comp.scale, comp.spacing, comp.textAlign, comp.slant)
+  )
+)
 
 proc initialize*(vt: ptr VecText, text: string, color: Color = color(255, 255, 255, 255), textAlign: TextAlign = TextAlign.center, scale: Vector2d = vector2d(1, 1), spacing: Vector2d = vector2d(0, 0), slant: float = 0) =
   vt.text = text
@@ -186,29 +169,23 @@ type
   VecPartEmitter* = object of Comp
     parts: seq[VecPart]
     tickProc: proc (emitter: ptr VecPartEmitter, part: ptr VecPart)
-  
-proc regVecPartEmitter*(elem: ptr Elem) =
-  register[VecPartEmitter](elem, CompReg[VecPartEmitter](
-    perPage: 2048,
-    onReg: proc (elem: ptr Elem) =
-      on(getUpComp[TimestepMgr](elem).evTick, proc (elem: ptr Elem, dt: float) =
-        for comp in mitems[VecPartEmitter](elem):
-          for part in comp.parts.mitems:
-            part.pos = polar(part.pos, part.rot, part.speed)
-      )
-      on(getUpComp[Renderer](elem).evDraw, proc (elem: ptr Elem, ren: ptr Renderer) =
-        for comp in mitems[VecPartEmitter](elem):
-          for part in comp.parts:
-            var origin = part.pos.toPoint2d & comp.owner.getTransform
-            ren.drawLine(origin, polar(origin, part.rot, part.len), part.color)
-      )
-    ,
-    onNew: proc (owner: ptr Elem): VecPartEmitter =
-      VecPartEmitter(
-        parts: @[],
-        ticKProc: nil
-      )
-  ))
+
+method setup(comp: var VecPartEmitter) =
+  comp.parts = @[]
+
+define(VecPartEmitter, proc (elem: Elem) =
+  on(getUpComp[TimestepMgr](elem).evTick, proc (elem: Elem, dt: float) =
+    for comp in mitems[VecPartEmitter](elem):
+      for part in comp.parts.mitems:
+        part.pos = polar(part.pos, part.rot, part.speed)
+  )
+  on(getUpComp[Renderer](elem).evDraw, proc (elem: Elem, ren: ptr Renderer) =
+    for comp in mitems[VecPartEmitter](elem):
+      for part in comp.parts:
+        var origin = part.pos.toPoint2d & comp.owner.getTransform
+        ren.drawLine(origin, polar(origin, part.rot, part.len), part.color)
+  )
+)
 
 proc initialize*(emitter: ptr VecPartEmitter, tickProc: proc (emitter: ptr VecPartEmitter, part: ptr VecPart)): ptr VecPartEmitter {.discardable.} =
   emitter.tickProc = tickProc
