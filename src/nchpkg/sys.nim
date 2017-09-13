@@ -4,13 +4,9 @@ import
   macros,
   tables,
   typetraits,
-  sequtils,
-  strutils,
-  future,
   sdl2,
   sdl2/gfx,
   basic2d,
-  random,
   math
 
 import
@@ -105,7 +101,7 @@ proc define*(t: typedesc, onReg: proc (elem: Elem) = nil) =
   if t.name in nch.compDefs:
     raise nchError(t.name & " is already defined")
   if nch.debug:
-    echo("DEFINE\t" & t.name)
+    echo(" DEFINE\t" & t.name)
   nch.compDefs[t.name] = (
     name: t.name,
     onReg: onReg
@@ -113,7 +109,7 @@ proc define*(t: typedesc, onReg: proc (elem: Elem) = nil) =
 
 proc addPage*(compReg: CompReg) =
   if nch.debug:
-    echo("ADDPAGE\t" & compReg.owner.name & "->" & compReg.compDef.name & "#" & $compReg.pages.len)
+    echo("  +PAGE\t" & compReg.owner.name & "->" & compReg.compDef.name & "#" & $compReg.pages.len)
   var mem = allocShared0(compReg.size * compReg.perPage)
   compReg.pages.add(mem)
   #[for i in 0..compReg.perPage:
@@ -154,6 +150,8 @@ proc elem*(name: string): Elem {.inline.} =
   result.scale = vector2d(1, 1)
   result.rot = 0
   if nch.root == nil:
+    if nch.debug:
+      echo("   ROOT\t" & name)
     result.destroyingElems = @[]
     nch.root = result
 
@@ -179,6 +177,8 @@ proc add*(parent, child: Elem): Elem {.discardable.} =
   else:
     parent.children[child.name] = child
   child.parent = parent
+  if nch.debug:
+    echo("    ADD\t" & parent.name & "->" & child.name)
   child
 
 # add child Elem to parent Elem
@@ -220,11 +220,15 @@ proc destroy*(elem: Elem) =
       elem.next.prev = nil
 
 proc bury*(elem: Elem) =
+  if nch.debug:
+    echo "   BURY\t" & elem.name
   for compRef in elem.comps.values:
     var comp = getGenericInstance(compRef.compReg, compRef.index)
     comp.active = false
     comp.owner = nil
     compRef.compReg.vacancies.add(compRef.index)
+    if nch.debug:
+      echo "REMOVE\t" & compRef.compReg.owner.name & "->" & compRef.name & "#" & $compRef.index
   if elem.compRegs != nil:
     for compReg in elem.compRegs.values:
       discard #TODO
@@ -264,7 +268,7 @@ proc attach*[T: Comp](elem: Elem, comp: T): ptr T {.discardable.} =
     compReg.addPage()
   
   if nch.debug:
-    echo("ATTACH\t" & elem.name & "->(" & compReg.owner.name & "->" & name & "#" & $(index div compReg.perPage) & "," & $(index mod compReg.perPage) & ")")
+    echo(" ATTACH\t" & elem.name & "->(" & compReg.owner.name & "->" & name & "#" & $(index div compReg.perPage) & "," & $(index mod compReg.perPage) & ")")
   let inst = getInstance[T](compReg, index)
   inst[] = comp
   inst.owner = elem

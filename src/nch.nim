@@ -9,4 +9,4 @@ export
   sys, std, phy, vgfx, util
 
 when isMainModule:
-  include nchpkg/demo
+  include nchpkg/numberbox

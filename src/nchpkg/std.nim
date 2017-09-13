@@ -5,7 +5,6 @@ import sys
 import
   tables,
   typetraits,
-  future,
   sdl2,
   sdl2/gfx,
   basic2d
@@ -171,3 +170,30 @@ define(Renderer, proc (elem: Elem) =
       renderer.ren.present()
   )
 )
+
+### StateMgr - state manager
+type
+  State* = ref object of RootObj
+    name*: string
+    mgr*: ptr StateMgr
+  
+  StateMgr* = object of Comp
+    first: State
+    last: State
+
+method tick(state: var State, dt: float) {.base.} =
+  discard
+
+proc push*(mgr: ptr StateMgr, state: State) =
+  mgr.first = state
+  mgr.last = state
+
+
+define(StateMgr, proc (elem: Elem) =
+  before(getUpComp[TimestepMgr](elem).evTick, proc (elem: Elem, dt: float) = # OnTick
+    for mgr in each[StateMgr](elem):
+      if mgr.first != nil:
+        mgr.first.tick(dt)
+  )
+)
+
