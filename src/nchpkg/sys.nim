@@ -228,7 +228,7 @@ proc bury*(elem: Elem) =
     comp.owner = nil
     compRef.compReg.vacancies.add(compRef.index)
     if nch.debug:
-      echo "REMOVE\t" & compRef.compReg.owner.name & "->" & compRef.name & "#" & $compRef.index
+      echo " REMOVE\t" & compRef.compReg.owner.name & "->" & compRef.name & "#" & $compRef.index
   if elem.compRegs != nil:
     for compReg in elem.compRegs.values:
       discard #TODO
@@ -289,26 +289,6 @@ proc getTransform*(elem: Elem): Matrix2d =
 proc globalPos*(elem: Elem): Vector2d =
   point2d(0, 0) & elem.getTransform
 
-# subscribe a proc to an Event
-proc before*[T](event: Event[T], procedure: T) =
-  event.before.add((procedure, nilCompRef))
-
-# subscribe a proc to an Event
-proc on*[T](event: Event[T], procedure: T) =
-  event.on.add((procedure, nilCompRef))
-
-# subscribe a proc to an Event
-proc after*[T](event: Event[T], procedure: T) =
-  event.after.add((procedure, nilCompRef))
-
-# create a new Event
-proc newEvent*[T](): Event[T] =
-  Event[T](
-    before: @[],
-    on: @[],
-    after: @[]
-  )
-
 proc getComp*[T: Comp](owner: Elem): ptr T =
   let name = typedesc[T].name
   let upCompReg = getUpCompReg[T](owner)
@@ -356,3 +336,80 @@ iterator siblings*(elem: var Elem): Elem =
   while e.next != nil:
     yield e.next
     e = e.next
+
+proc toIdentDefs(stmtList: NimNode): seq[NimNode] =
+  expectKind(stmtList, nnkStmtList)
+  result = @[]
+
+  for child in stmtList:
+    expectKind(child, nnkCall)
+    result.add(newIdentDefs(child[0], child[1][0]))
+
+### EVENTS
+
+# create a new Event
+proc newEvent*[T](): Event[T] =
+  Event[T](
+    before: @[],
+    on: @[],
+    after: @[]
+  )
+
+# subscribe a proc to an Event
+proc before*[T](event: Event[T], procedure: T) =
+  event.before.add((procedure, nilCompRef))
+
+# subscribe a proc to an Event
+proc on*[T](event: Event[T], procedure: T) =
+  event.on.add((procedure, nilCompRef))
+
+# subscribe a proc to an Event
+proc after*[T](event: Event[T], procedure: T) =
+  event.after.add((procedure, nilCompRef))
+
+#[template before*[T](event: Event[T], body: untyped): untyped =
+  discard]#
+
+# event definition
+macro evdef*(name: untyped, fields: untyped): untyped =
+  let identDefs = toIdentDefs(fields)
+  result = newTree(nnkStmtList,
+    newTree(nnkTypeSection,
+      newTree(nnkTypeDef,
+        newTree(nnkPostfix,
+          newIdentNode(!"*"),
+          newIdentNode($name & "Event")
+        ),
+        newEmptyNode(),
+        newTree(nnkTupleTy,
+          identDefs
+        )
+      ),
+      newTree(nnkTypeDef,
+        newTree(nnkPostfix,
+          newIdentNode(!"*"),
+          newIdentNode("On" & $name)
+        ),
+        newEmptyNode(),
+        newTree(nnkProcTy,
+          newTree(nnkFormalParams,
+            newEmptyNode(),
+            newTree(nnkIdentDefs,
+              newIdentNode(!"elem"),
+              newIdentNode(!"Elem"),
+              newEmptyNode()
+            ),
+            newTree(nnkIdentDefs,
+              newIdentNode(!"ev"),
+              newIdentNode($name & "Event"),
+              newEmptyNode()
+            )
+          ),
+          newTree(nnkPragma,
+            newIdentNode(!"closure")
+          )
+        )
+      )
+    )
+  )
+

@@ -10,8 +10,12 @@ import
   basic2d
 
 ### TimestepMgr - attempts to execute tick events at a given framerate  ###
+
+evdef Tick:
+  dt: float
+  now: float
+
 type
-  OnTick* = proc (elem: Elem, dt: float) {.closure.}
   TimestepMgr* = object of Comp
     fpsman*: FpsManager
     evTick*: sys.Event[OnTick]
@@ -33,20 +37,20 @@ proc initialize*(mgr: ptr TimestepMgr) =
     mgr.owner.getRoot.cleanup()
     for ev in mgr.evTick:
       let (p, _) = ev
-      p(mgr.owner.getRoot, dt)
+      p(mgr.owner.getRoot, (dt, mgr.elapsed))
 
 ### InputMgr - handles user input ###
 type
   InputMgr* = object of Comp
-    input: array[1024, bool]
-    inputLast: array[1024, bool]
+    input: array[2048, bool]
+    inputLast: array[2048, bool]
     handler*: proc (key: Scancode): int
   
   # button state enumeration
-  InputState* {.pure.} = enum up, pressed, down, released
+  BtnState* {.pure.} = enum up, pressed, down, released
 
 define(InputMgr, proc (elem: Elem) =
-  before(getComp[TimestepMgr](elem).evTick, proc (elem: Elem, dt: float) = # OnTick
+  before(getComp[TimestepMgr](elem).evTick, proc (elem: Elem, ev: TickEvent) = # OnTick
     for mgr in each[InputMgr](elem):
       shallowCopy(mgr.inputLast, mgr.input)
       var event = defaultEvent
@@ -56,9 +60,11 @@ define(InputMgr, proc (elem: Elem) =
           mgr.owner.getRoot.destroy()
           discard
         of KeyDown:
-          mgr.input[mgr.handler(event.key.keysym.scancode)] = true
+          #echo $event.key.keysym.scancode & " DOWN"
+          mgr.input[event.key.keysym.scancode.int] = true
         of KeyUp:
-          mgr.input[mgr.handler(event.key.keysym.scancode)] = false
+          #echo $event.key.keysym.scancode & " UP"
+          mgr.input[event.key.keysym.scancode.int] = false
         else:
           discard
   )
@@ -69,11 +75,18 @@ proc initialize*[T: enum](mgr: ptr InputMgr, handler: proc (key: Scancode): T) =
   mgr.handler = handler
 
 # get the current state of a given input
-proc getInput*[T: enum](mgr: var InputMgr, input: T): InputState =
-  #if not mgr.input[input] and not mgr.inputLast[input]: return InputState.up
-  #if mgr.input[input] and not mgr.inputLast[input]: return InputState.pressed
-  #if mgr.input[input] and mgr.inputLast[input]: return InputState.down
-  return InputState.released
+proc getKeyState*(mgr: ptr InputMgr, key: Scancode): BtnState =
+  var key = key.int
+  if mgr.input[key]:
+    if mgr.inputLast[key]:
+      BtnState.down
+    else:
+      BtnState.pressed
+  else:
+    if mgr.inputLast[key]:
+      BtnState.released
+    else:
+      BtnState.up
 
 ### Renderer - SDL-based graphical renderer ###
 type
@@ -82,7 +95,9 @@ type
   Camera* = object of Comp
     size*: float
 
-  OnDraw* = proc (elem: Elem, ren: ptr Renderer)
+  DrawEvent* = tuple
+    ren: ptr Renderer
+  OnDraw* = proc (elem: Elem, ev: DrawEvent)
 
   Renderer* = object of Comp
     ren*: RendererPtr
@@ -153,7 +168,7 @@ method setup(comp: var Camera) =
 define(Camera)
 define(Renderer, proc (elem: Elem) =
   reg[Camera](elem, 16)
-  after(getUpComp[TimestepMgr](elem).evTick, proc (elem: Elem, dt: float) = # OnTick
+  after(getUpComp[TimestepMgr](elem).evTick, proc (elem: Elem, ev: TickEvent) = # OnTick
     for renderer in each[Renderer](elem):
       renderer.ren.setDrawColor(0, 0, 0, 255)
       renderer.ren.clear()
@@ -165,7 +180,7 @@ define(Renderer, proc (elem: Elem) =
     
       for ev in renderer.evDraw:
         let (p, _) = ev
-        p(renderer.owner.getRoot, renderer)
+        p(renderer.owner.getRoot, (ren: renderer))
     
       renderer.ren.present()
   )
@@ -176,24 +191,65 @@ type
   State* = ref object of RootObj
     name*: string
     mgr*: ptr StateMgr
+    exiting*: bool
+    exitTime*: tuple[now: float, until: float]
   
   StateMgr* = object of Comp
-    first: State
-    last: State
+    states*: seq[State]
+    destroyingStates: seq[int]
 
-method tick(state: var State, dt: float) {.base.} =
+method init(state: State) {.base.} =
+  discard
+method handleInput(state: State, input: ptr InputMgr): bool {.base.} =
+  false
+method tick(state: State, ev: TickEvent): bool {.base.} =
+  false
+method bury(state: State) {.base.} =
   discard
 
-proc push*(mgr: ptr StateMgr, state: State) =
-  mgr.first = state
-  mgr.last = state
+method setup(comp: var StateMgr) =
+  comp.states = @[]
+  comp.destroyingStates = @[]
 
+proc push*(mgr: ptr StateMgr, state: State) =
+  mgr.states.add(state)
+  mgr.states[mgr.states.high].mgr = mgr
+  mgr.states[mgr.states.high].init()
 
 define(StateMgr, proc (elem: Elem) =
-  before(getUpComp[TimestepMgr](elem).evTick, proc (elem: Elem, dt: float) = # OnTick
+  before(getUpComp[TimestepMgr](elem).evTick, proc (elem: Elem, ev: TickEvent) = # OnTick
     for mgr in each[StateMgr](elem):
-      if mgr.first != nil:
-        mgr.first.tick(dt)
+      if mgr.states.len == 0:
+        echo "WARNING: no states in StateMgr!"
+      
+      for i in 0..mgr.states.high:
+        var state = mgr.states[mgr.states.high - i]
+        if not state.exiting:
+          if state.handleInput(getUpComp[InputMgr](mgr.owner)):
+            break
+      
+      var stop = false
+      for i in 0..mgr.states.high:
+        var index = mgr.states.high - i
+        var state = mgr.states[index]
+        if not stop:
+          stop = state.tick(ev)
+        if state.exiting:
+          state.exitTime.now += ev.dt
+          if state.exitTime.now >= state.exitTime.until:
+            state.bury()
+            mgr.destroyingStates.add(index)
+        else:
+          state.exitTime.now = max(state.exitTime.now - ev.dt, 0.0)
+
+      while mgr.destroyingStates.len > 0:
+        mgr.states.delete(mgr.destroyingStates.pop()) #TODO: check perf, probably!
   )
 )
 
+proc exit*(state: State, time: float = 0) =
+  state.exiting = true
+  state.exitTime = (now: 0.0, until: time)
+
+proc unexit*(state: State) =
+  state.exiting = false
