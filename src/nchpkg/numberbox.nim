@@ -1,3 +1,5 @@
+# number box - a simple incremental game
+
 # in a real project, you just `import nch`
 import
   sys,
@@ -25,10 +27,10 @@ method init(state: PauseState) =
 method handleInput(state: PauseState, input: ptr InputMgr): bool =
   if input.getKeyState(SDL_SCANCODE_SPACE) == BtnState.pressed:
     state.exit()
-  true
+  true # prevents "lower" states from handling input while this state is active and not exiting
 
 method tick(state: PauseState, ev: TickEvent): bool =
-  true
+  true # prevents "lower" States from ticking while this state is active and not exiting
 
 method bury(state: PauseState) =
   state.pauseMsg.destroy()
@@ -65,8 +67,8 @@ method init(state: MainState) =
   state.url.attach(VecText(
     text: "github.com/rezich/nch",
     textAlign: TextAlign.center,
-    scale: vector2d(0.25, 0.175),
-    spacing: vector2d(0.075, 0.1),
+    scale: vector2d(0.3, 0.175),
+    spacing: vector2d(0.05, 0.1),
     slant: 0.0,
     color: color(63, 63, 63, 255)
   ))
@@ -89,21 +91,20 @@ method tick(state: MainState, ev: TickEvent): bool =
     getComp[VecText](state.numberBox).text = $state.num
   false
 
-
 ## Main
-var app = elem("nch demo: number box")
+if isMainModule:
+  var app = elem("nch demo: number box")
 
-reg[TimestepMgr](app, 1)
-app.attach(TimestepMgr())
-reg[InputMgr](app, 1)
-reg[Renderer](app, 1)
-reg[StateMgr](app, 1)
+  reg[TimestepMgr](app, 1)
+  app.attach(TimestepMgr())
+  defer: getComp[TimestepMgr](app).initialize()
+  reg[InputMgr](app, 1)
+  reg[Renderer](app, 1)
+  reg[StateMgr](app, 1)
 
-app.attach(InputMgr())
-app.attach(Renderer(width: 640, height: 480))
+  app.attach(InputMgr())
+  app.attach(Renderer(width: 640, height: 480))
 
-reg[VecText](app, 1024)
+  reg[VecText](app, 1024)
 
-app.attach(StateMgr()).push(MainState())
-
-getComp[TimestepMgr](app).initialize()
+  app.attach(StateMgr()).push(MainState())
