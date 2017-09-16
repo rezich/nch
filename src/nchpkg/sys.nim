@@ -23,9 +23,7 @@ export
 type
   CompDef = ref object
     name: string
-    base: string
     onReg: proc (elem: Elem)
-    derivatives: seq[string]
   
   CompReg* = ref object
     name: string
@@ -104,19 +102,6 @@ proc getInstance[T: Comp](compReg: CompReg, index: int): ptr T =
 proc getGenericInstance(compReg: CompReg, index: int): ptr Comp =
   cast[ptr Comp](cast[uint](compReg.pages[index div compReg.perPage]) + (index mod compReg.perPage).uint * compReg.size.uint)
 
-proc defineAs*(t: typedesc, tBase: typedesc, onReg: proc (elem: Elem) = nil) =
-  if t.name in nch.compDefs:
-    raise nchError(t.name & " is already defined")
-  
-  if tBase.name notin nch.compDefs:
-    raise nchError(tBase.name & ", base of " & t.name & ", is not defined")
-  
-  if nch.debug:
-    echo("  DEFAS\t" & tBase.name & "->" & t.name)
-  nch.compDefs[t.name] = nch.compDefs[tBase.name]
-  nch.compDefs[tBase.name].derivatives.add(t.name)
-  #TODO: use hierarchies deeper than two defs deep
-
 proc define*(t: typedesc, onReg: proc (elem: Elem) = nil) =
   if t.name in nch.compDefs:
     raise nchError(t.name & " is already defined")
@@ -124,9 +109,7 @@ proc define*(t: typedesc, onReg: proc (elem: Elem) = nil) =
     echo(" DEFINE\t" & t.name)
   nch.compDefs[t.name] = CompDef(
     name: t.name,
-    base: nil,
-    onReg: onReg,
-    derivatives: @[]
+    onReg: onReg
   )
 
 proc addPage*(compReg: CompReg) =
@@ -319,9 +302,6 @@ proc getComp*[T: Comp](owner: Elem): ptr T =
   if upCompReg == nil:
     raise nchError(name & " isn't registered up the hierarchy of " & owner.name)
   if name notin owner.comps:
-    for deriv in upCompReg.compDef.derivatives:
-      if deriv in owner.comps:
-        return cast[ptr T](getGenericInstance(upCompReg[], owner.comps[deriv].index))
     raise nchError(name & " isn't attached to " & owner.name)
   return getInstance[T](upCompReg[], owner.comps[name].index)
 

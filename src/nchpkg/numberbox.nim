@@ -12,7 +12,7 @@ import
 type PauseState* = object of State
   pauseMsg: Elem
 
-defineAs(PauseState, State)
+define(PauseState)
 
 method init(state: ptr PauseState) =
   state.pauseMsg = state.owner.add("pauseMsg")
@@ -47,7 +47,7 @@ type MainState* = object of State
   numberBox: Elem
   url: Elem
 
-defineAs(MainState, State)
+define(MainState)
 
 method init(state: ptr MainState) =
   state.world = state.owner.add("world")
