@@ -246,6 +246,7 @@ proc run*(mgr: ptr StateMgr) =
       mgr.states.delete(mgr.destroyingStates.pop()) #TODO: check perf, probably!
     
     getUpComp[Renderer](mgr.owner).render()
+  mgr.owner.cleanup() # this is probably unnecessary but whatever
 
 type
   MenuItem* = object of Comp
