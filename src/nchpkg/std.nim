@@ -82,11 +82,11 @@ proc exit*(state: ptr State, time: float = 0) =
 proc unexit*(state: ptr State) =
   state.exiting = false
 
-
-
 method setup(comp: var State) =
   comp.evTick = newEvent[OnTick]()
   let mgr = getUpComp[StateMgr](comp.owner)
+  if comp.timeScale == 0:
+    comp.timeScale = 1.0
   mgr.push(addr(comp))
   
 
@@ -234,7 +234,7 @@ proc run*(mgr: ptr StateMgr) =
           p(state.owner, (dt: dtLocal, now: state.elapsed))
       
       if state.exiting:
-        state.exitTime.now += dt
+        state.exitTime.now += dt # crucially, this uses the real dt and not the state-timeScale'd one
         if state.exitTime.now >= state.exitTime.until:
           state.bury()
           state.owner.destroy()
@@ -246,3 +246,12 @@ proc run*(mgr: ptr StateMgr) =
       mgr.states.delete(mgr.destroyingStates.pop()) #TODO: check perf, probably!
     
     getUpComp[Renderer](mgr.owner).render()
+
+type
+  MenuItem* = object of Comp
+    menu: ptr Menu
+    selected: bool
+
+  Menu* = object of State
+    items: seq[ptr MenuItem]
+
