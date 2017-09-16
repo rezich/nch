@@ -15,7 +15,7 @@ type PauseState* = object of State
 defineAs(PauseState, State)
 
 method init(state: ptr PauseState) =
-  state.pauseMsg = state.mgr.owner.add("pauseMsg")
+  state.pauseMsg = state.owner.add("pauseMsg")
   state.pauseMsg.attach(VecText(
     text: "-PAUSED-",
     textAlign: TextAlign.center,
@@ -50,9 +50,9 @@ type MainState* = object of State
 defineAs(MainState, State)
 
 method init(state: ptr MainState) =
-  state.world = state.mgr.owner.add("world")
+  state.world = state.owner.add("world")
 
-  var cam = state.mgr.owner.add("mainCam")
+  var cam = state.owner.add("mainCam")
   cam.attach(Camera(size: 10))
   cam.pos = vector2d(0, 0)
 
