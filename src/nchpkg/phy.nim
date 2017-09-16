@@ -58,7 +58,7 @@ method setup(comp: var CollisionRealm) =
 define(CircleCollider)
 define(AABBCollider)
 define(CollisionRealm, proc (elem: Elem) =
-  after(getComp[TimestepMgr](elem).evTick, proc (elem: Elem, ev: TickEvent) =
+  after(getComp[State](elem).evTick, proc (elem: Elem, ev: TickEvent) =
     for realm in each[CollisionRealm](elem):
       for a in realm.mitems:
         for b in realm.mitems:

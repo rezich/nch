@@ -21,11 +21,14 @@ export
 {.experimental.}
 
 type
-  CompDef = tuple
+  CompDef = ref object
     name: string
+    base: string
     onReg: proc (elem: Elem)
+    derivatives: seq[string]
   
   CompReg* = ref object
+    name: string
     owner: Elem
     perPage*: int
     size: int
@@ -79,6 +82,10 @@ var nch* = Nch(root: nil, compDefs: newOrderedTable[string, CompDef](), debug: t
 template nchError*(message: string): untyped =
   newException(NchError, message)
 
+template nchDebugEcho*(message: string): untyped =
+  if nch.debug:
+    echo message
+
 proc `$`*(elem: Elem, indent: int = 0): string =
   result = "Elem \"" & elem.name & "\":\n  children:\n"
   for child in elem.children.values:
@@ -97,26 +104,42 @@ proc getInstance[T: Comp](compReg: CompReg, index: int): ptr T =
 proc getGenericInstance(compReg: CompReg, index: int): ptr Comp =
   cast[ptr Comp](cast[uint](compReg.pages[index div compReg.perPage]) + (index mod compReg.perPage).uint * compReg.size.uint)
 
+proc defineAs*(t: typedesc, tBase: typedesc, onReg: proc (elem: Elem) = nil) =
+  if t.name in nch.compDefs:
+    raise nchError(t.name & " is already defined")
+  
+  if tBase.name notin nch.compDefs:
+    raise nchError(tBase.name & ", base of " & t.name & ", is not defined")
+  
+  if nch.debug:
+    echo("  DEFAS\t" & tBase.name & "->" & t.name)
+  nch.compDefs[t.name] = nch.compDefs[tBase.name]
+  nch.compDefs[tBase.name].derivatives.add(t.name)
+  #TODO: use hierarchies deeper than two defs deep
+
 proc define*(t: typedesc, onReg: proc (elem: Elem) = nil) =
   if t.name in nch.compDefs:
     raise nchError(t.name & " is already defined")
   if nch.debug:
     echo(" DEFINE\t" & t.name)
-  nch.compDefs[t.name] = (
+  nch.compDefs[t.name] = CompDef(
     name: t.name,
-    onReg: onReg
+    base: nil,
+    onReg: onReg,
+    derivatives: @[]
   )
 
 proc addPage*(compReg: CompReg) =
   if nch.debug:
-    echo("  +PAGE\t" & compReg.owner.name & "->" & compReg.compDef.name & "#" & $compReg.pages.len)
+    echo("  +PAGE\t" & compReg.owner.name & "->" & compReg.name & "#" & $compReg.pages.len)
   var mem = allocShared0(compReg.size * compReg.perPage)
   compReg.pages.add(mem)
   #[for i in 0..compReg.perPage:
     cast[ptr Comp](cast[uint](mem) + (compReg.size * i).uint)[] = Comp()]#
 
-proc newCompReg(owner: Elem, perPage: int, size: int, compDef: CompDef): CompReg =
+proc newCompReg(name: string, owner: Elem, perPage: int, size: int, compDef: CompDef): CompReg =
   new(result)
+  result.name = name
   result.pages = @[]
   result.vacancies = @[]
   result.owner = owner
@@ -137,7 +160,7 @@ proc reg*[T: Comp](elem: Elem, perPage: int) =
   let compDef = nch.compDefs[name]
   if nch.debug:
     echo("REGISTR\t" & elem.name & "->" & name & " (" & $sizeof(T) & "*" & $perPage & "=" & $(sizeof(T) * perPage) & ")")
-  elem.compRegs[name] = newCompReg(elem, perPage, sizeof(T), compDef)
+  elem.compRegs[name] = newCompReg(name, elem, perPage, sizeof(T), compDef)
   if compDef.onReg != nil:
     compDef.onReg(elem)
 
@@ -245,8 +268,9 @@ proc getUpCompReg*[T: Comp](elem: Elem): ptr CompReg =
   if elem == nch.root:
     parent = elem
   while parent != nil:
-    if parent.compRegs != nil and name in parent.compRegs:
-      return cast[ptr CompReg](addr(parent.compRegs[name]))
+    if parent.compRegs != nil:
+        if name in parent.compRegs:
+          return cast[ptr CompReg](addr(parent.compRegs[name]))
     parent = parent.parent
   raise nchError(name & " isn't registered up the hierarchy of " & elem.name)
 
@@ -295,6 +319,9 @@ proc getComp*[T: Comp](owner: Elem): ptr T =
   if upCompReg == nil:
     raise nchError(name & " isn't registered up the hierarchy of " & owner.name)
   if name notin owner.comps:
+    for deriv in upCompReg.compDef.derivatives:
+      if deriv in owner.comps:
+        return cast[ptr T](getGenericInstance(upCompReg[], owner.comps[deriv].index))
     raise nchError(name & " isn't attached to " & owner.name)
   return getInstance[T](upCompReg[], owner.comps[name].index)
 

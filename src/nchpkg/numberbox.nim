@@ -9,10 +9,12 @@ import
   sdl2
 
 ## PauseState
-type PauseState* = ref object of State
+type PauseState* = object of State
   pauseMsg: Elem
 
-method init(state: PauseState) =
+defineAs(PauseState, State)
+
+method init(state: ptr PauseState) =
   state.pauseMsg = state.mgr.owner.add("pauseMsg")
   state.pauseMsg.attach(VecText(
     text: "-PAUSED-",
@@ -24,20 +26,20 @@ method init(state: PauseState) =
   ))
   state.pauseMsg.pos = vector2d(0, 0)
 
-method handleInput(state: PauseState, input: ptr InputMgr): bool =
-  if input.getKeyState(SDL_SCANCODE_SPACE) == BtnState.pressed:
+method handleInput(state: ptr PauseState): bool =
+  if state.mgr.getKeyState(SDL_SCANCODE_SPACE) == BtnState.pressed:
     state.exit()
   true # prevents "lower" states from handling input while this state is active and not exiting
 
-method tick(state: PauseState, ev: TickEvent): bool =
+method tick(state: ptr PauseState, ev: TickEvent): bool =
   true # prevents "lower" States from ticking while this state is active and not exiting
 
-method bury(state: PauseState) =
+method bury(state: ptr PauseState) =
   state.pauseMsg.destroy()
 
 
 ## MainState
-type MainState* = ref object of State
+type MainState* = object of State
   num: int
   curNum: float
   nextNum: float
@@ -45,7 +47,9 @@ type MainState* = ref object of State
   numberBox: Elem
   url: Elem
 
-method init(state: MainState) =
+defineAs(MainState, State)
+
+method init(state: ptr MainState) =
   state.world = state.mgr.owner.add("world")
 
   var cam = state.mgr.owner.add("mainCam")
@@ -74,16 +78,16 @@ method init(state: MainState) =
   ))
   state.url.pos = vector2d(0, -4.75)
 
-method handleInput(state: MainState, input: ptr InputMgr): bool =
-  if input.getKeyState(SDL_SCANCODE_ESCAPE) == BtnState.pressed:
-    state.mgr.push(PauseState())
+method handleInput(state: ptr MainState): bool =
+  if state.mgr.getKeyState(SDL_SCANCODE_ESCAPE) == BtnState.pressed:
+    state.owner.add("pauseScreen").attach(PauseState())
     return true
-  if input.getKeyState(SDL_SCANCODE_SPACE) == BtnState.pressed:
+  if state.mgr.getKeyState(SDL_SCANCODE_SPACE) == BtnState.pressed:
     inc state.num
     getComp[VecText](state.numberBox).text = $state.num
   true
 
-method tick(state: MainState, ev: TickEvent): bool =
+method tick(state: ptr MainState, ev: TickEvent): bool =
   state.curNum += ev.dt
   while state.curNum >= 1.0:
     state.curNum -= 1.0
@@ -95,16 +99,17 @@ method tick(state: MainState, ev: TickEvent): bool =
 if isMainModule:
   var app = elem("nch demo: number box")
 
-  reg[TimestepMgr](app, 1)
-  app.attach(TimestepMgr())
-  defer: getComp[TimestepMgr](app).initialize()
-  reg[InputMgr](app, 1)
-  reg[Renderer](app, 1)
   reg[StateMgr](app, 1)
-
-  app.attach(InputMgr())
+  reg[Renderer](app, 1)
   app.attach(Renderer(width: 640, height: 480))
-
+  
   reg[VecText](app, 1024)
 
-  app.attach(StateMgr()).push(MainState())
+  reg[MainState](app, 1)
+  reg[PauseState](app, 1)
+
+  app.attach(StateMgr())
+  app.attach(MainState(timeScale: 0.5))
+
+  getComp[StateMgr](app).run()
+

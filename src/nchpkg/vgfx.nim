@@ -173,7 +173,7 @@ method setup(comp: var VecPartEmitter) =
   comp.parts = @[]
 
 define(VecPartEmitter, proc (elem: Elem) =
-  on(getUpComp[TimestepMgr](elem).evTick, proc (elem: Elem, ev: TickEvent) = # OnTick
+  on(getUpComp[State  ](elem).evTick, proc (elem: Elem, ev: TickEvent) = # OnTick
     for comp in each[VecPartEmitter](elem):
       for part in comp.parts.mitems:
         part.pos = polar(part.pos, part.rot, part.speed)
