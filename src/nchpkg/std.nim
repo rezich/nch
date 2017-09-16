@@ -237,6 +237,7 @@ proc run*(mgr: ptr StateMgr) =
         state.exitTime.now += dt
         if state.exitTime.now >= state.exitTime.until:
           state.bury()
+          state.owner.destroy()
           mgr.destroyingStates.add(index)
       else:
         state.exitTime.now = max(state.exitTime.now - dt, 0.0)
