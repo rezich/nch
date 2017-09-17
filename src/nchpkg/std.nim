@@ -109,10 +109,14 @@ type
   ScreenMode* {.pure.} = enum windowed, full, borderless
 
   Camera* = object of Comp
+    pos*: Vector2d
+    rot*: float
     size*: float
+    matrix*: Matrix2d
 
   DrawEvent* = tuple
     ren: ptr Renderer
+    #cam: ptr Camera
   OnDraw* = proc (elem: Elem, ev: DrawEvent)
 
   Renderer* = object of Comp
@@ -122,15 +126,14 @@ type
     width*: int
     height*: int
     center: Point
-    camera*: ptr Camera
-    camMatrix*: Matrix2d
+    cameras*: seq[ptr Camera]
   
   # exception sub-type for SDL things
   SDLException = object of Exception
 
-proc worldToScreen*(renderer: ptr Renderer, v: Vector2d): Point =
+proc worldToScreen*(camera: ptr Camera, v: Vector2d): Point =
   #var p = (v & renderer.camMatrix).toPoint2d() - renderer.camera.owner.pos
-  (v.toPoint2d() & renderer.camMatrix).toPoint()
+  (v.toPoint2d() & camera.matrix).toPoint()
 
 # allow SDL to fail gracefully
 template sdlFailIf(cond: typed, reason: string) =
@@ -139,7 +142,7 @@ template sdlFailIf(cond: typed, reason: string) =
 
 method setup(comp: var Renderer) =
   comp.evDraw = newEvent[OnDraw]()
-  comp.camera = nil
+  comp.cameras = @[]
   sdlFailIf(not sdl2.init(INIT_VIDEO or INIT_TIMER or INIT_EVENTS)):
     "SDL2 initialization failed"
   sdlFailIf(not setHint("SDL_RENDER_SCALE_QUALITY", "0")):
@@ -164,18 +167,19 @@ proc setScreenMode*(renderer: ptr Renderer, mode: ScreenMode) =
   of ScreenMode.full: discard setFullscreen(renderer.win, SDL_WINDOW_FULLSCREEN)
   of ScreenMode.borderless: discard setFullscreen(renderer.win, SDL_WINDOW_FULLSCREEN_DESKTOP)
 
-proc getMatrix*(cam: ptr Camera, renderer: ptr Renderer): Matrix2d =
-  #cam.owner.getTransform
-  move(-cam.owner.globalPos) & rotate(cam.owner.rot) & scale(min(renderer.width, renderer.height).float / cam.size) & stretch(cam.owner.scale.x, -cam.owner.scale.y) & move(renderer.center.x.float, renderer.center.y.float)
+proc setMatrix*(cam: ptr Camera, renderer: ptr Renderer)=
+  cam.matrix = cam.owner.getTransform() & move(-cam.pos) & rotate(cam.rot) & scale(min(renderer.width, renderer.height).float / cam.size) & stretch(1, -1) & move(renderer.center.x.float, renderer.center.y.float)
 
 proc render*(renderer: ptr Renderer) =
   renderer.ren.setDrawColor(0, 0, 0, 255)
   renderer.ren.clear()
 
-  if renderer.camera == nil:
+  if renderer.cameras.len == 0:
+    echo "NO CAMERAS!"
     return
   
-  renderer.camMatrix = renderer.camera.getMatrix(renderer)
+  for cam in renderer.cameras:
+    cam.setMatrix(renderer)
 
   for ev in renderer.evDraw:
     let (p, _) = ev
@@ -183,8 +187,11 @@ proc render*(renderer: ptr Renderer) =
 
   renderer.ren.present()
 
+proc pushCamera(renderer: ptr Renderer, camera: ptr Camera) =
+  renderer.cameras.add(camera)
+
 # shut down a given Renderer
-proc shutdown*(renderer: var Renderer) =
+method shutdown*(renderer: ptr Renderer) =
   renderer.win.destroy()
   renderer.ren.destroy()
   sdl2.quit()
@@ -193,8 +200,22 @@ proc initialize*(camera: ptr Camera, size: float) =
   camera.size = size
 
 method setup(comp: var Camera) =
-  if getUpComp[Renderer](comp.owner).camera == nil:
-    getUpComp[Renderer](comp.owner).camera = addr(comp)
+  let renderer = getUpComp[Renderer](comp.owner)
+  if renderer != nil:
+    renderer.pushCamera(addr(comp))
+  else:
+    raise nchError("couldn't find a Renderer up the hierarchy from Camera")
+
+method shutdown*(comp: ptr Camera) =
+  let renderer = getUpComp[Renderer](comp.owner)
+  if renderer != nil:
+    let index = renderer.cameras.find(comp)
+    if index != -1:
+      renderer.cameras.delete(index)
+    else:
+      raise nchError("couldn't find this Camera in the Renderer up the hierarchy (this super shouldn't happen)")
+  else:
+    raise nchError("couldn't find a Renderer up the hierarchy from Camera (this super shouldn't happen)")
 
 define(Camera)
 define(Renderer, proc (elem: Elem) =

@@ -164,6 +164,9 @@ proc elem*(name: string): Elem {.inline.} =
 method setup(comp: var Comp) {.base.} =
   discard
 
+method shutdown(comp: ptr Comp) {.base.} =
+  discard
+
 proc getRoot*(elem: Elem): Elem =
   result = elem
   while result.parent != nil:
@@ -230,6 +233,7 @@ proc bury*(elem: Elem) =
     echo "   BURY\t" & elem.name
   for compRef in elem.comps.values:
     var comp = getGenericInstance(compRef.compReg, compRef.index)
+    comp.shutdown()
     comp.active = false
     comp.owner = nil
     compRef.compReg.vacancies.add(compRef.index)

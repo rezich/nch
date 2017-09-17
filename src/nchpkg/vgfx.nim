@@ -76,9 +76,9 @@ proc vecFont*(name: string): VecFont =
 proc `[]`(font: VecFont, c: char): VecGlyph =
   font.glyphs[ord(c)]
 
-proc drawLine*(renderer: ptr Renderer, back, front: Vector2d, color: Color = color(255, 255, 255, 255), width: int = 1) =
-  var p1 = renderer.worldToScreen(back)
-  var p2 = renderer.worldToScreen(front)
+proc drawLine*(renderer: ptr Renderer, cam: ptr Camera, back, front: Vector2d, color: Color = color(255, 255, 255, 255), width: int = 1) =
+  var p1 = cam.worldToScreen(back)
+  var p2 = cam.worldToScreen(front)
   #renderer.ren.setDrawColor(color)
   #renderer.ren.drawLine(p1.x, p1.y, p2.x, p2.y)
   if width == 1:
@@ -86,17 +86,17 @@ proc drawLine*(renderer: ptr Renderer, back, front: Vector2d, color: Color = col
   else:
     renderer.ren.thickLineRGBA(p1.x.int16, p1.y.int16, p2.x.int16, p2.y.int16, width.uint8, color.r, color.g, color.b, color.a)
 
-proc drawCircle*(renderer: ptr Renderer, pos: Vector2d, radius: float, color: Color) {.deprecated.} =
-  var pos = renderer.worldToScreen(pos)
+proc drawCircle*(renderer: ptr Renderer, cam: ptr Camera, pos: Vector2d, radius: float, color: Color) {.deprecated.} =
+  var pos = cam.worldToScreen(pos)
   renderer.ren.aacircleRGBA(pos.x.int16, pos.y.int16, radius.int16, color.r.uint8, color.g.uint8, color.b.uint8, color.a.uint8)
 
-proc drawCircle*(renderer: ptr Renderer, trans: Matrix2d, radius: float, color: Color) =
-  var pos = renderer.worldToScreen(point2d(0, 0) & trans)
-  var radpos = renderer.worldToScreen((polar(point2d(0, 0) & trans, 0.0, radius)).toVector2d())
+proc drawCircle*(renderer: ptr Renderer, cam: ptr Camera, trans: Matrix2d, radius: float, color: Color) =
+  var pos = cam.worldToScreen(point2d(0, 0) & trans)
+  var radpos = cam.worldToScreen((polar(point2d(0, 0) & trans, 0.0, radius)).toVector2d())
   var radius = (radpos.x - pos.x).float
   renderer.ren.circleRGBA(pos.x.int16, pos.y.int16, radius.int16, color.r.uint8, color.g.uint8, color.b.uint8, color.a.uint8)
 
-proc drawChar*(renderer: ptr Renderer, trans: Matrix2d, c: char, font: VecFont, color: Color, scale: Vector2d, slant: float = 0) =
+proc drawChar*(renderer: ptr Renderer, cam: ptr Camera, trans: Matrix2d, c: char, font: VecFont, color: Color, scale: Vector2d, slant: float = 0) =
   renderer.ren.setDrawColor(color)
   let glyph = font[c]
   var lastPoint = Vector2d()
@@ -108,13 +108,13 @@ proc drawChar*(renderer: ptr Renderer, trans: Matrix2d, c: char, font: VecFont, 
     else:
       backPoint = (vector2d(stroke.back.x + stroke.back.y * slant, stroke.back.y) * scale * 0.5).toPoint2d & trans
 
-    renderer.drawLine(backPoint, frontPoint, color)
+    renderer.drawLine(cam, backPoint, frontPoint, color)
     lastPoint.x = stroke.front.x
     lastPoint.y = stroke.front.y
 
 type TextAlign* {.pure.} = enum left, center, right
 
-proc drawString*(renderer: ptr Renderer, trans: Matrix2d, str: string, font: VecFont, color: Color, scale: Vector2d, spacing: Vector2d, textAlign: TextAlign, slant: float = 0) =
+proc drawString*(renderer: ptr Renderer, cam: ptr Camera, trans: Matrix2d, str: string, font: VecFont, color: Color, scale: Vector2d, spacing: Vector2d, textAlign: TextAlign, slant: float = 0) =
   var i = 0
   var trans = trans
   
@@ -126,7 +126,7 @@ proc drawString*(renderer: ptr Renderer, trans: Matrix2d, str: string, font: Vec
   of TextAlign.right:
     trans = move(vector2d(-(str.len.float - 1) * (scale.x + spacing.x), 0) - vector2d(scale.x * 0.5, 0)) & trans
   while i < str.len:
-    renderer.drawChar(trans, str[i], font, color, scale, slant)
+    renderer.drawChar(cam, trans, str[i], font, color, scale, slant)
     trans = move(vector2d(1, 0) * (scale + spacing)) & trans
     i += 1
 
@@ -144,8 +144,10 @@ method setup(comp: var VecText) =
 
 define(VecText, proc (elem: Elem) =
   on(getUpComp[Renderer](elem).evDraw, proc (elem: Elem, ev: DrawEvent) = # OnDraw
+    var ev = ev
     for comp in each[VecText](elem):
-      ev.ren.drawString(comp.owner.getTransform(), comp.text, comp.font, comp.color, comp.scale, comp.spacing, comp.textAlign, comp.slant)
+      let cam = getUpComp[Camera](comp.owner)
+      ev.ren.drawString(cam, comp.owner.getTransform(), comp.text, comp.font, comp.color, comp.scale, comp.spacing, comp.textAlign, comp.slant)
   )
 )
 
@@ -173,7 +175,7 @@ method setup(comp: var VecPartEmitter) =
   comp.parts = @[]
 
 define(VecPartEmitter, proc (elem: Elem) =
-  on(getUpComp[State  ](elem).evTick, proc (elem: Elem, ev: TickEvent) = # OnTick
+  on(getUpComp[State](elem).evTick, proc (elem: Elem, ev: TickEvent) = # OnTick
     for comp in each[VecPartEmitter](elem):
       for part in comp.parts.mitems:
         part.pos = polar(part.pos, part.rot, part.speed)
@@ -182,7 +184,7 @@ define(VecPartEmitter, proc (elem: Elem) =
     for comp in each[VecPartEmitter](elem):
       for part in comp.parts:
         var origin = part.pos.toPoint2d & comp.owner.getTransform
-        ev.ren.drawLine(origin, polar(origin, part.rot, part.len), part.color)
+        #ev.ren.drawLine(origin, polar(origin, part.rot, part.len), part.color)
   )
 )
 

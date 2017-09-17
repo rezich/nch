@@ -15,6 +15,7 @@ type PauseState* = object of State
 define(PauseState)
 
 method init(state: ptr PauseState) =
+  state.owner.attach(Camera(size: 10))
   state.pauseMsg = state.owner.add("pauseMsg")
   state.pauseMsg.attach(VecText(
     text: "-PAUSED-",
@@ -46,7 +47,7 @@ type MainState* = object of State
   nextNum: float
   world: Elem
   numberBox: Elem
-  url: Elem
+  overlay: Elem
 
   btnTransfer: Elem
   bank: Elem
@@ -64,9 +65,7 @@ method init(state: ptr MainState) =
   state.camSize = 5
 
   # create a camera
-  var cam = state.owner.add("mainCam")
-  cam.attach(Camera(size: 5))
-  cam.pos = vector2d(0, 0)
+  state.world.attach(Camera(size: 5))
 
   # create the titular number box
   state.numberBox = state.world.add("numberBox")
@@ -79,16 +78,17 @@ method init(state: ptr MainState) =
   ))
   state.numberBox.pos = vector2d(0, 0)
   
-  # create github url, attached to the camera, so it moves with it (this is how you make HUDs)
-  #[state.url = cam.add("url")
-  state.url.attach(VecText(
+  state.overlay = state.owner.add("overlay")
+  state.overlay.attach(Camera(size: 10))
+  var url = state.overlay.add("url")
+  url.attach(VecText(
     text: "github.com/rezich/nch",
     textAlign: TextAlign.center,
     scale: vector2d(0.3, 0.175),
     spacing: vector2d(0.05, 0.1),
     color: color(63, 63, 63, 255)
   ))
-  state.url.pos = vector2d(0, -4.75)]#
+  url.pos = vector2d(0, -4.75)
 
 proc updateValues(state: ptr MainState) =
   getComp[VecText](state.numberBox).text = $state.num
@@ -111,8 +111,8 @@ method handleInput(state: ptr MainState): bool =
         state.bank.attach(VecText(
           text: "0",
           textAlign: TextAlign.center,
-          scale: vector2d(1, 1),
-          spacing: vector2d(0.15, 0.15),
+          scale: vector2d(0.75, 0.75),
+          spacing: vector2d(0.1, 0.1),
           color: color(255, 255, 255, 255)
         ))
         state.bank.pos = vector2d(0, -4)
@@ -161,8 +161,8 @@ method tick(state: ptr MainState, ev: TickEvent): bool =
     ease(getComp[VecText](state.bank).color, color(127, 127, 127, 255), 2.5 * ev.dt)
   
   # ease camera
-  var cam = getUpComp[Renderer](state.owner).camera
-  ease(cam.owner.pos, state.camPos, 1.5 * ev.dt)
+  let cam = getComp[Camera](state.world)
+  ease(cam.pos, state.camPos, 1.5 * ev.dt)
   ease(cam.size, state.camSize, 2.5 * ev.dt, 0.1)
 
   false # "lower" states can still tick (even though this is the "lowest" state)
