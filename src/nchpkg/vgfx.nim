@@ -76,9 +76,9 @@ proc vecFont*(name: string): VecFont =
 proc `[]`(font: VecFont, c: char): VecGlyph =
   font.glyphs[ord(c)]
 
-proc drawLine*(renderer: ptr Renderer, cam: ptr Camera, back, front: Vector2d, color: Color = color(255, 255, 255, 255), width: int = 1) =
-  var p1 = cam.worldToScreen(back)
-  var p2 = cam.worldToScreen(front)
+proc drawLine*(renderer: ptr Renderer, cam: ptr Camera, trans: Matrix2d, back, front: Vector2d, color: Color = color(255, 255, 255, 255), width: int = 1) =
+  let p1 = cam.worldToScreen(back)
+  let p2 = cam.worldToScreen(front)
   #renderer.ren.setDrawColor(color)
   #renderer.ren.drawLine(p1.x, p1.y, p2.x, p2.y)
   if width == 1:
@@ -86,9 +86,19 @@ proc drawLine*(renderer: ptr Renderer, cam: ptr Camera, back, front: Vector2d, c
   else:
     renderer.ren.thickLineRGBA(p1.x.int16, p1.y.int16, p2.x.int16, p2.y.int16, width.uint8, color.r, color.g, color.b, color.a)
 
-proc drawCircle*(renderer: ptr Renderer, cam: ptr Camera, pos: Vector2d, radius: float, color: Color) {.deprecated.} =
-  var pos = cam.worldToScreen(pos)
-  renderer.ren.aacircleRGBA(pos.x.int16, pos.y.int16, radius.int16, color.r.uint8, color.g.uint8, color.b.uint8, color.a.uint8)
+proc drawArrow*(renderer: ptr Renderer, cam: ptr Camera, trans: Matrix2d, back, front: Vector2d, headLen, headAng: float, color: Color = color(255, 255, 255, 255), width: int = 1) =
+  drawLine(renderer, cam, trans, back, front, color, width)
+  let ang = angle(front, back)
+  drawLine(renderer, cam, trans, front, front + polarVector2d(ang + headAng, headLen), color, width)
+  drawLine(renderer, cam, trans, front, front + polarVector2d(ang - headAng, headLen), color, width)
+
+proc drawRect*(renderer: ptr Renderer, cam: ptr Camera, trans: Matrix2d, center: Vector2d, scale: Vector2d, color: Color = color(255, 255, 255, 255), width: int = 1) =
+  let w = scale.x / 2
+  let h = scale.y / 2
+  drawLine(renderer, cam, trans, center + vector2d(-w, h), center + vector2d(w, h),  color, width) # top
+  drawLine(renderer, cam, trans, center + vector2d(-w, -h), center + vector2d(w, -h),  color, width) # bot
+  drawLine(renderer, cam, trans, center + vector2d(-w, -h), center + vector2d(-w, h),  color, width) # left
+  drawLine(renderer, cam, trans, center + vector2d(w, -h), center + vector2d(w, h),  color, width) # right
 
 proc drawCircle*(renderer: ptr Renderer, cam: ptr Camera, trans: Matrix2d, radius: float, color: Color) =
   var pos = cam.worldToScreen(point2d(0, 0) & trans)
@@ -108,7 +118,7 @@ proc drawChar*(renderer: ptr Renderer, cam: ptr Camera, trans: Matrix2d, c: char
     else:
       backPoint = (vector2d(stroke.back.x + stroke.back.y * slant, stroke.back.y) * scale * 0.5).toPoint2d & trans
 
-    renderer.drawLine(cam, backPoint, frontPoint, color)
+    renderer.drawLine(cam, trans, backPoint, frontPoint, color)
     lastPoint.x = stroke.front.x
     lastPoint.y = stroke.front.y
 
@@ -144,7 +154,6 @@ method setup(comp: var VecText) =
 
 define(VecText, proc (elem: Elem) =
   on(getUpComp[Renderer](elem).evDraw, proc (elem: Elem, ev: DrawEvent) = # OnDraw
-    var ev = ev
     for comp in each[VecText](elem):
       let cam = getUpComp[Camera](comp.owner)
       ev.ren.drawString(cam, comp.owner.getTransform(), comp.text, comp.font, comp.color, comp.scale, comp.spacing, comp.textAlign, comp.slant)

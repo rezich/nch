@@ -8,6 +8,46 @@ import
   phy,
   sdl2
 
+
+## BoxedNum
+type BoxedNum* = object of Comp
+  value: int
+  displayedValue: int
+
+define(BoxedNum, proc (elem: Elem) =
+  on(getUpComp[Renderer](elem).evDraw, proc (elem: Elem, ev: DrawEvent) = # OnDraw
+    for comp in each[BoxedNum](elem):
+      let cam = getUpComp[Camera](comp.owner)
+      let trans = comp.owner.getTransform()
+      ev.ren.drawRect(cam, trans, comp.owner.pos, vector2d(1.33, 1.33), color(63, 63, 63, 255))
+      #ev.ren.drawArrow(cam, trans, comp.owner.pos + vector2d(2, 0), comp.owner.pos + vector2d(2.5, 1.5), 0.5, DEG30)
+  )
+)
+
+
+## FlowArrow
+type FlowArrow* = object of Comp
+  back: Vector2d
+  front: Vector2d
+  radius: float
+
+define(FlowArrow, proc (elem: Elem) =
+  on(getUpComp[Renderer](elem).evDraw, proc (elem: Elem, ev: DrawEvent) = # OnDraw
+    for comp in each[FlowArrow](elem):
+      let cam = getUpComp[Camera](comp.owner)
+      let backAng = angle(comp.back, comp.owner.pos)
+      let backBack = comp.back + polarVector2d(backAng, dist(comp.back, comp.owner.pos) - 0.15)
+      let backFront = comp.back + polarVector2d(backAng, dist(comp.back, comp.owner.pos) - comp.radius)
+      let frontAng = angle(comp.owner.pos, comp.front)
+      let frontFront = comp.front
+      let frontBack = comp.front - polarVector2d(frontAng, dist(comp.front, comp.owner.pos) - comp.radius)
+      let trans = comp.owner.getTransform()
+      #ev.ren.drawLine(cam, trans, backBack, backFront)
+      #ev.ren.drawArrow(cam, trans, frontBack, frontFront, 0.5, DEG30)
+  )
+)
+
+
 ## PauseState
 type PauseState* = object of State
   pauseMsg: Elem
@@ -76,6 +116,7 @@ method init(state: ptr MainState) =
     spacing: vector2d(0.2, 0.2),
     color: color(255, 255, 255, 255)
   ))
+  state.numberBox.attach(BoxedNum())
   state.numberBox.pos = vector2d(0, 0)
   
   state.overlay = state.owner.add("overlay")
@@ -115,7 +156,15 @@ method handleInput(state: ptr MainState): bool =
           spacing: vector2d(0.1, 0.1),
           color: color(255, 255, 255, 255)
         ))
+        state.bank.attach(BoxedNum())
         state.bank.pos = vector2d(0, -4)
+
+        state.btnTransfer.attach(FlowArrow(
+          back: state.numberBox.pos,
+          front: state.bank.pos,
+          radius: 0.66
+        ))
+
         state.camPos = vector2d(0, -2)
         state.camSize = 8
       getComp[VecText](state.btnTransfer).color = color(255, 255, 255, 255)
@@ -175,12 +224,14 @@ if isMainModule:
   reg[Renderer](app, 1)
   app.attach(Renderer(width: 640, height: 480))
   
-  reg[VecText](app, 1024)
+  reg[VecText](app, 2048)
+  reg[BoxedNum](app, 1024)
+  reg[FlowArrow](app, 1024)
 
   reg[MainState](app, 1)
   reg[PauseState](app, 1)
 
   app.attach(StateMgr())
-  app.attach(MainState())
+  app.attach(MainState(timeScale: 10))
 
   getComp[StateMgr](app).run()

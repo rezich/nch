@@ -219,7 +219,7 @@ method shutdown*(comp: ptr Camera) =
 
 define(Camera)
 define(Renderer, proc (elem: Elem) =
-  reg[Camera](elem, 16)
+  reg[Camera](elem, 128)
 )
 
 proc run*(mgr: ptr StateMgr) =

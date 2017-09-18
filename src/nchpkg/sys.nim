@@ -297,7 +297,7 @@ proc getTransform*(elem: Elem): Matrix2d =
     result = parent.getTransform() & result
     parent = parent.parent
 
-proc globalPos*(elem: Elem): Vector2d =
+proc globalPos*(elem: Elem): Vector2d {.deprecated.} =
   point2d(0, 0) & elem.getTransform
 
 proc getComp*[T: Comp](owner: Elem): ptr T =
