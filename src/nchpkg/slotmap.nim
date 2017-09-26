@@ -103,7 +103,7 @@ iterator mitems*[T](slotMap: SlotMap[T]): var T =
         if slotMap.active[i * slotMap.perChunk + j]:
           yield slotMap.chunks[i][j mod slotMap.perChunk]
 
-proc `[]`[T](slot: Slot[T]): var T =
+proc `[]`*[T](slot: Slot[T]): var T =
   if slot.gen != slot.slotMap.gens[slot.internalIndex]:
     raise newException(IndexError, "Slot[" & typedesc[T].name & "] outdated, points to dead object")
   slot.slotMap.chunks[slot.index.chunk][slot.index.chunkIndex]
@@ -123,7 +123,7 @@ when isMainModule:
   echo obj[].bar # use [] (dereference) to get the object being pointed at
 
   obj.remove()
-  # sm.remove(obj) # alternative
+  #sm.remove(obj) # alternative
 
   for i in 0..32:
     sm.add Foo(bar: i)
