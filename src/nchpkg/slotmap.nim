@@ -23,33 +23,28 @@ type
     next: int
 
 proc addChunk[T](slotMap: SlotMap[T]) =
-  if slotMap.chunks == nil:
-    slotMap.chunks = @[]
   var chunk = new(seq[T])
   chunk[] = newSeq[T](slotMap.perChunk)
   slotMap.chunks.add(chunk)
   slotMap.slotInfo.setLen(slotMap.slotInfo.len + slotMap.perChunk)
 
-proc initSlotMap[T](slotMap: SlotMap[T]) =
-  if slotMap.chunks == nil:
+proc initSlotMap*[T](slotMap: SlotMap[T], perChunk: int = 128, addFirstChunk: bool = true) =
+  slotMap.chunks = @[]
+  slotMap.perChunk = perChunk
+  slotMap.next = 0
+  slotMap.vacancies = @[]
+  slotMap.slotInfo = @[]
+  if addFirstChunk:
     addChunk(slotMap)
 
-proc newSlotMap*[T](perChunk: int = 128, allocFirstPage: bool = true): SlotMap[T] =
+proc newSlotMap*[T](perChunk: int = 128): SlotMap[T] =
   new(result)
-  result.perChunk = perChunk
-  result.next = 0
-  result.vacancies = @[]
-  result.slotInfo = @[]
-  if allocFirstPage:
-    addChunk(result)
-  else:
-    result.chunks = @[]
+  initSlotMap(result, perChunk)
 
 proc internalIndex[T](slot: Slot[T]): int =
   slot.index.chunk * slot.slotMap.perChunk + slot.index.chunkIndex
 
 proc add*[T](slotMap: SlotMap[T], item: T): Slot[T] =
-  initSlotMap(slotMap)
   var index = slotMap.next
   if slotMap.vacancies.len > 0:
     index = slotMap.vacancies.pop()
@@ -86,14 +81,8 @@ proc remove*[T](slotMap: SlotMap[T], slot: Slot[T]) =
 proc destroy*[T](slot: Slot[T]) =
   slot.slotMap.remove(slot)
 
-proc clear*[T](slotMap: SlotMap[T], allocFirstPage: bool = true) =
-  slotMap.vacancies = @[]
-  slotMap.slotInfo = @[]
-  slotMap.next = 0
-  if allocFirstPage:
-    addChunk(slotMap)
-  else:
-    slotMap.chunks = @[]
+proc clear*[T](slotMap: SlotMap[T], addFirstChunk: bool = true) =
+  initSlotMap(slotMap, slotMap.perChunk, addFirstChunk)
 
 iterator mitems*[T](slotMap: SlotMap[T]): var T =
   if slotMap.chunks == nil:
