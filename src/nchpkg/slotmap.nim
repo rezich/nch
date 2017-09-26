@@ -17,23 +17,22 @@ type
 
   SlotMap*[T] = ref object
     perChunk: int
-    chunks: seq[ref seq[T]]
+    chunks: seq[seq[T]]
     slotInfo: seq[tuple[active: bool, gen: int]]
     vacancies: seq[int]
     next: int
 
 proc addChunk[T](slotMap: SlotMap[T]) =
-  var chunk = new(seq[T])
-  chunk[] = newSeq[T](slotMap.perChunk)
-  slotMap.chunks.add(chunk)
+  slotMap.chunks.add(newSeq[T](slotMap.perChunk))
   slotMap.slotInfo.setLen(slotMap.slotInfo.len + slotMap.perChunk)
 
 proc initSlotMap*[T](slotMap: SlotMap[T], perChunk: int = 128, addFirstChunk: bool = true) =
-  slotMap.chunks = @[]
   slotMap.perChunk = perChunk
-  slotMap.next = 0
-  slotMap.vacancies = @[]
+  slotMap.chunks = @[]
   slotMap.slotInfo = @[]
+  slotMap.vacancies = @[]
+  slotMap.next = 0
+
   if addFirstChunk:
     addChunk(slotMap)
 
@@ -71,7 +70,7 @@ proc add*[T](slotMap: SlotMap[T], item: T): Slot[T] =
   )
 
 proc remove*[T](slotMap: SlotMap[T], slot: Slot[T]) =
-  if slotMap.chunks == nil:
+  if slotMap.chunks.isNil():
     raise newException(AccessViolationError, "SlotMap[" & typedesc[T].name & "] not initialized")
   if slot.gen != slot.slotMap.slotInfo[slot.internalIndex].gen or not slot.slotMap.slotInfo[slot.internalIndex].active:
     raise newException(IndexError, "Slot[" & typedesc[T].name & "] outdated, points to dead object")
@@ -85,7 +84,7 @@ proc clear*[T](slotMap: SlotMap[T], addFirstChunk: bool = true) =
   initSlotMap(slotMap, slotMap.perChunk, addFirstChunk)
 
 iterator mitems*[T](slotMap: SlotMap[T]): var T =
-  if slotMap.chunks == nil:
+  if slotMap.chunks.isNil():
     raise newException(AccessViolationError, "SlotMap[" & typedesc[T].name & "] not initialized")
   if slotMap.next != 0:
     for i in 0..slotMap.chunks.high:
@@ -166,7 +165,7 @@ when isMainModule:
   # it didn't crash! instead, it created a new "chunk" of
   # memory, just as big as the first one, and used that
   assert foos.chunks.len == 2
-
+  
   
   # we can easily iterate through all items in
   # the container, even though they're spread
