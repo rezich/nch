@@ -19,7 +19,7 @@ define(BoxedNum, proc (elem: Elem) =
     for comp in each[BoxedNum](elem):
       let cam = getUpComp[Camera](comp.owner)
       let trans = comp.owner.getTransform()
-      ev.ren.drawRect(cam, trans, comp.owner.pos, vector2d(1.33, 1.33), color(63, 63, 63, 255))
+      ev.ren.drawRect(cam, trans, vector2d(0, 0), vector2d(1.33, 1.33), color(63, 63, 63, 255))
       #ev.ren.drawArrow(cam, trans, comp.owner.pos + vector2d(2, 0), comp.owner.pos + vector2d(2.5, 1.5), 0.5, DEG30)
   )
 )
@@ -68,7 +68,7 @@ method init(state: ptr PauseState) =
   state.pauseMsg.pos = vector2d(0, 0)
 
 method handleInput(state: ptr PauseState): bool =
-  if state.mgr.getKeyState(SDL_SCANCODE_SPACE) == BtnState.pressed:
+  if state.mgr.getKeyState(SDL_SCANCODE_SPACE) == BtnPos.pressed:
     state.exit()
   true # prevents "lower" states from handling input while this state is active and not exiting
 
@@ -141,12 +141,12 @@ proc updateValues(state: ptr MainState) =
     getComp[VecText](state.bank).text = $state.bankedNum
 
 method handleInput(state: ptr MainState): bool =
-  if state.mgr.getKeyState(SDL_SCANCODE_ESCAPE) == BtnState.pressed:
+  if state.mgr.getKeyState(SDL_SCANCODE_ESCAPE) == BtnPos.pressed:
     state.owner.add("pauseScreen").attach(PauseState())
     return true
   
   if state.btnTransfer != nil and state.num > 0:
-    if state.mgr.getKeyState(SDL_SCANCODE_T) == BtnState.pressed:
+    if state.mgr.getKeyState(SDL_SCANCODE_T) == BtnPos.pressed:
       if state.bank == nil:
         state.bank = state.world.add("bank")
         state.bank.attach(VecText(
@@ -232,6 +232,6 @@ if isMainModule:
   reg[PauseState](app, 1)
 
   app.attach(StateMgr())
-  app.attach(MainState(timeScale: 10))
+  app.attach(MainState(timeScale: 5))
 
   getComp[StateMgr](app).run()

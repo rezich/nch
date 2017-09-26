@@ -1,0 +1,46 @@
+import nch
+
+elem "app":
+  regs:
+    StateMgr, 1
+    Renderer, 1
+    Camera, 128
+    VecText, 2048
+    MainState, 1
+    PauseState, 1
+  comps:
+    StateMgr
+    Renderer(
+      width: 640,
+      height: 480
+    )
+    MainState
+  children:
+    elem "world":
+      comps:
+        Camera(size: 5)
+      children:
+        elem "numberBox":
+          comps:
+            VecText
+        elem "transferBtn":
+          comps:
+            VecText
+        elem "bank":
+          comps:
+            VecText
+    elem "overlay":
+      comps:
+        Camera(size: 10)
+      children:
+        elem "watermark":
+          comps:
+            VecText
+    elem "pauseMenu":
+      comps:
+        PauseState
+        Camera(size: 10)
+      children:
+        elem "pauseMsg":
+          comps:
+            VecText

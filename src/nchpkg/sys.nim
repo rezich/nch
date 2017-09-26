@@ -34,6 +34,7 @@ type
     pages*: seq[pointer]
     compDef: CompDef
     last: int
+    lastCheck: int
   
   CompRef* = tuple
     name: string
@@ -43,6 +44,8 @@ type
   
   Comp* = object of RootObj
     active: bool
+    index: int
+    check: int
     owner*: Elem
     destroying: bool
 
@@ -72,6 +75,11 @@ type
     root: Elem
     compDefs: OrderedTableRef[string, CompDef]
     debug: bool
+  
+  Handle*[T: Comp] = object
+    index: int
+    check: int
+    compReg: CompReg
 
 let nilCompRef*: CompRef = ("NIL COMP REF", -1, true, nil)
 
@@ -102,6 +110,8 @@ proc getInstance[T: Comp](compReg: CompReg, index: int): ptr T =
 proc getGenericInstance(compReg: CompReg, index: int): ptr Comp =
   cast[ptr Comp](cast[uint](compReg.pages[index div compReg.perPage]) + (index mod compReg.perPage).uint * compReg.size.uint)
 
+#converter toComp[T: Comp](handle: Handle[T]): ptr T = nil
+
 proc define*(t: typedesc, onReg: proc (elem: Elem) = nil) =
   if t.name in nch.compDefs:
     raise nchError(t.name & " is already defined")
@@ -117,8 +127,6 @@ proc addPage*(compReg: CompReg) =
     echo("  +PAGE\t" & compReg.owner.name & "->" & compReg.name & "#" & $compReg.pages.len)
   var mem = allocShared0(compReg.size * compReg.perPage)
   compReg.pages.add(mem)
-  #[for i in 0..compReg.perPage:
-    cast[ptr Comp](cast[uint](mem) + (compReg.size * i).uint)[] = Comp()]#
 
 proc newCompReg(name: string, owner: Elem, perPage: int, size: int, compDef: CompDef): CompReg =
   new(result)
@@ -130,6 +138,7 @@ proc newCompReg(name: string, owner: Elem, perPage: int, size: int, compDef: Com
   result.size = size
   result.compDef = compDef
   result.last = -1
+  result.lastCheck = -1
   result.addPage()
 
 proc reg*[T: Comp](elem: Elem, perPage: int) =
@@ -278,17 +287,21 @@ proc attach*[T: Comp](elem: Elem, comp: T): ptr T {.discardable.} =
   while index div compReg.perPage > compReg.pages.high:
     compReg.addPage()
   
+  inc compReg.lastCheck
+
   if nch.debug:
-    echo(" ATTACH\t" & elem.name & "->(" & compReg.owner.name & "->" & name & "#" & $(index div compReg.perPage) & "," & $(index mod compReg.perPage) & ")")
+    echo(" ATTACH\t" & elem.name & "->(" & compReg.owner.name & "->" & name & "#" & $(index div compReg.perPage) & "," & $(index mod compReg.perPage) & ") (check: " & $compReg.lastCheck & ")")
+  
   let inst = getInstance[T](compReg, index)
   inst[] = comp
   inst.owner = elem
   inst.active = true
   inst.destroying = false
+  inst.index = index
+  inst.check = compReg.lastCheck
   elem.comps[name] = (name: name, index: index, empty: false, compReg: compReg[])
   inst.setup()
   inst
-
 
 proc getTransform*(elem: Elem): Matrix2d =
   result = stretch(elem.scale.x, elem.scale.y) & rotate(elem.rot) & move(elem.pos)

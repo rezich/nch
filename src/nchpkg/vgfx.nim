@@ -77,8 +77,8 @@ proc `[]`(font: VecFont, c: char): VecGlyph =
   font.glyphs[ord(c)]
 
 proc drawLine*(renderer: ptr Renderer, cam: ptr Camera, trans: Matrix2d, back, front: Vector2d, color: Color = color(255, 255, 255, 255), width: int = 1) =
-  let p1 = cam.worldToScreen(back)
-  let p2 = cam.worldToScreen(front)
+  let p1 = cam.worldToScreen(back#[.toPoint2d & trans]#)
+  let p2 = cam.worldToScreen(front#[.toPoint2d & trans]#)
   #renderer.ren.setDrawColor(color)
   #renderer.ren.drawLine(p1.x, p1.y, p2.x, p2.y)
   if width == 1:
@@ -95,6 +95,7 @@ proc drawArrow*(renderer: ptr Renderer, cam: ptr Camera, trans: Matrix2d, back, 
 proc drawRect*(renderer: ptr Renderer, cam: ptr Camera, trans: Matrix2d, center: Vector2d, scale: Vector2d, color: Color = color(255, 255, 255, 255), width: int = 1) =
   let w = scale.x / 2
   let h = scale.y / 2
+  let center = center.toPoint2d & trans
   drawLine(renderer, cam, trans, center + vector2d(-w, h), center + vector2d(w, h),  color, width) # top
   drawLine(renderer, cam, trans, center + vector2d(-w, -h), center + vector2d(w, -h),  color, width) # bot
   drawLine(renderer, cam, trans, center + vector2d(-w, -h), center + vector2d(-w, h),  color, width) # left

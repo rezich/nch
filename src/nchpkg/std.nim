@@ -30,7 +30,7 @@ type
     timeScale*: float
     exiting*: bool
     exitTime*: tuple[now: float, until: float]
-  BtnState* {.pure.} = enum up, pressed, down, released
+  BtnPos* {.pure.} = enum up, pressed, down, released
 
 define(State)
 
@@ -91,18 +91,18 @@ method setup(comp: var State) =
   
 
 # get the current state of a given input
-proc getKeyState*(mgr: ptr StateMgr, key: Scancode): BtnState =
+proc getKeyState*(mgr: ptr StateMgr, key: Scancode): BtnPos =
   var key = key.int
   if mgr.input[key]:
     if mgr.inputLast[key]:
-      BtnState.down
+      BtnPos.down
     else:
-      BtnState.pressed
+      BtnPos.pressed
   else:
     if mgr.inputLast[key]:
-      BtnState.released
+      BtnPos.released
     else:
-      BtnState.up
+      BtnPos.up
 
 ### Renderer - SDL-based graphical renderer ###
 type
