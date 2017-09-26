@@ -123,23 +123,23 @@ when isMainModule:
 
 
   # instantiate a `Foo`, storing it in `foos`, and
-  # returns a `Slot[Foo]` that "points to it"
+  # get back a "slot" (`Slot[Foo]`) that "points to it"
   var obj = foos.add Foo(bar: 42)
   
 
-  # we can use the object that the `Slot[T]` "points to"
+  # we can use the object that the "slot" "points to"
   # by using the dereference operator
   echo "foobar: " & $obj[].bar
 
 
-  # destroying an object using a `Slot[T]` is easy:
+  # destroying the object a "slot" "points to" is easy:
   obj.destroy()
   # this marks the object "being pointed at" as "free",
   # such that it can be reused the next time the
-  # `SlotMap[T]` needs space for a `T`
+  # container  needs space for a new object
 
 
-  # alternatively, we could *remove* it from the `SlotMap[T]` itself:
+  # alternatively, we could *remove* it from the collection itself:
   var failedToRemoveTwice = false
   try:
     foos.remove(obj)
@@ -157,16 +157,16 @@ when isMainModule:
   # since we destroyed it earlier
   assert obj.index == obj2.index
   # despite residing in the same location in memory,
-  # the two `Slot[T]`s are not equal
+  # the two "slots" are not equal
   assert obj != obj2
-  # this is because `Slot[T]` also tracks a "generation index",
+  # this is because "slots" also track a "generation index",
   # distinct between re-uses of the memory address in the
-  # `Slot[T]`'s `SlotMap[T]`'s internal data structure
+  # internal data structure
 
 
   # let's add seven more things to the collection
   for i in 1..7:
-    discard foos.add Foo(bar: i * i) # (we `discard` the returned slot here—normally, don't do this)
+    discard foos.add Foo(bar: i * i)
   # no problem; these are all allocated properly
   
 
@@ -174,9 +174,8 @@ when isMainModule:
   # which will bring the total number of items to nine—
   # one more than the eight we "expected"
   discard foos.add Foo(bar: 999)
-  # it didn't crash! instead, it created a new "chunk"
-  # of memory, just as big as the initial chunk
-  # (`8 * sizeof(T)`), and used that.
+  # it didn't crash! instead, it created a new "chunk" of
+  # memory, just as big as the first one, and used that
   assert foos.chunks.len == 2
 
   
@@ -191,8 +190,8 @@ when isMainModule:
   foos.clear()
   
 
-  # of course, if we try to use a `Slot[T]` "into" a collection
-  # after we clear said collection, it won't work:
+  # of course, if we try to use a "slot" after its
+  # collection has been cleared, it won't work
   var failedToRemoveAfterClear = false
   try:
     echo obj[].bar
