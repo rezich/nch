@@ -105,7 +105,7 @@ iterator mitems*[T](slotMap: SlotMap[T]): var T =
           yield slotMap.chunks[i][j mod slotMap.perChunk]
 
 proc `[]`*[T](slot: Slot[T]): var T =
-  if slot.slotMap.slotInfo[slot.internalIndex].active || slot.gen != slot.slotMap.slotInfo[slot.internalIndex].gen:
+  if not slot.slotMap.slotInfo[slot.internalIndex].active or slot.gen != slot.slotMap.slotInfo[slot.internalIndex].gen:
     raise newException(IndexError, "Slot[" & typedesc[T].name & "] outdated, points to dead object")
   slot.slotMap.chunks[slot.index.chunk][slot.index.chunkIndex]
 
